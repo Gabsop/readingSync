@@ -1,0 +1,69 @@
+import { NextResponse } from "next/server";
+import { eq, desc } from "drizzle-orm";
+import { db } from "~/server/db";
+import { readingProgress } from "~/server/db/schema";
+
+export async function GET() {
+  const all = await db.query.readingProgress.findMany({
+    orderBy: [desc(readingProgress.updatedAt)],
+  });
+
+  return NextResponse.json(all);
+}
+
+export async function POST(request: Request) {
+  const body = await request.json() as {
+    book_id: string;
+    book_title?: string;
+    position: string;
+    current_page?: number;
+    total_pages?: number;
+    progress: number;
+    updated_at?: number;
+  };
+
+  const { book_id, book_title, position, current_page, total_pages, progress, updated_at } = body;
+
+  if (!book_id || !position || progress == null) {
+    return NextResponse.json(
+      { status: "error", message: "Missing required fields" },
+      { status: 400 },
+    );
+  }
+
+  const existing = await db.query.readingProgress.findFirst({
+    where: eq(readingProgress.bookId, book_id),
+  });
+
+  const timestamp = updated_at ? new Date(updated_at * 1000) : new Date();
+
+  if (existing) {
+    if (existing.updatedAt >= timestamp) {
+      return NextResponse.json({ status: "skipped", reason: "local is newer" });
+    }
+
+    await db
+      .update(readingProgress)
+      .set({
+        position,
+        currentPage: current_page ?? existing.currentPage,
+        totalPages: total_pages ?? existing.totalPages,
+        progress,
+        bookTitle: book_title ?? existing.bookTitle,
+        updatedAt: timestamp,
+      })
+      .where(eq(readingProgress.bookId, book_id));
+  } else {
+    await db.insert(readingProgress).values({
+      bookId: book_id,
+      bookTitle: book_title,
+      position,
+      currentPage: current_page,
+      totalPages: total_pages,
+      progress,
+      updatedAt: timestamp,
+    });
+  }
+
+  return NextResponse.json({ status: "ok" });
+}

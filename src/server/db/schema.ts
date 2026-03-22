@@ -1,45 +1,46 @@
 import { relations, sql } from "drizzle-orm";
-import { index, primaryKey, sqliteTableCreator } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  pgTableCreator,
+  primaryKey,
+  real,
+  text,
+  timestamp,
+  varchar,
+} from "drizzle-orm/pg-core";
 import { type AdapterAccount } from "next-auth/adapters";
 
-/**
- * This is an example of how to use the multi-project schema feature of Drizzle ORM. Use the same
- * database instance for multiple projects.
- *
- * @see https://orm.drizzle.team/docs/goodies#multi-project-schema
- */
-export const createTable = sqliteTableCreator((name) => `web_${name}`);
+export const createTable = pgTableCreator((name) => `web_${name}`);
 
 export const readingProgress = createTable(
   "reading_progress",
   (d) => ({
-    id: d.integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-    bookId: d.text({ length: 512 }).notNull(),
-    bookTitle: d.text({ length: 512 }),
-    position: d.text({ length: 1024 }).notNull(),
+    id: d.integer().primaryKey().generatedAlwaysAsIdentity(),
+    bookId: d.varchar({ length: 512 }).notNull(),
+    bookTitle: d.varchar({ length: 512 }),
+    position: d.varchar({ length: 1024 }).notNull(),
     currentPage: d.integer(),
     totalPages: d.integer(),
     progress: d.real().notNull(),
     updatedAt: d
-      .integer({ mode: "timestamp" })
-      .default(sql`(unixepoch())`)
+      .timestamp({ withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   }),
-  (t) => [
-    index("book_id_idx").on(t.bookId),
-  ]
+  (t) => [index("book_id_idx").on(t.bookId)]
 );
 
 export const users = createTable("user", (d) => ({
   id: d
-    .text({ length: 255 })
+    .varchar({ length: 255 })
     .notNull()
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
-  name: d.text({ length: 255 }),
-  email: d.text({ length: 255 }).notNull(),
-  emailVerified: d.integer({ mode: "timestamp" }).default(sql`(unixepoch())`),
-  image: d.text({ length: 255 }),
+  name: d.varchar({ length: 255 }),
+  email: d.varchar({ length: 255 }).notNull(),
+  emailVerified: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`),
+  image: d.varchar({ length: 255 }),
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -50,24 +51,22 @@ export const accounts = createTable(
   "account",
   (d) => ({
     userId: d
-      .text({ length: 255 })
+      .varchar({ length: 255 })
       .notNull()
       .references(() => users.id),
-    type: d.text({ length: 255 }).$type<AdapterAccount["type"]>().notNull(),
-    provider: d.text({ length: 255 }).notNull(),
-    providerAccountId: d.text({ length: 255 }).notNull(),
+    type: d.varchar({ length: 255 }).$type<AdapterAccount["type"]>().notNull(),
+    provider: d.varchar({ length: 255 }).notNull(),
+    providerAccountId: d.varchar({ length: 255 }).notNull(),
     refresh_token: d.text(),
     access_token: d.text(),
     expires_at: d.integer(),
-    token_type: d.text({ length: 255 }),
-    scope: d.text({ length: 255 }),
+    token_type: d.varchar({ length: 255 }),
+    scope: d.varchar({ length: 255 }),
     id_token: d.text(),
-    session_state: d.text({ length: 255 }),
+    session_state: d.varchar({ length: 255 }),
   }),
   (t) => [
-    primaryKey({
-      columns: [t.provider, t.providerAccountId],
-    }),
+    primaryKey({ columns: [t.provider, t.providerAccountId] }),
     index("account_user_id_idx").on(t.userId),
   ]
 );
@@ -79,12 +78,12 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
 export const sessions = createTable(
   "session",
   (d) => ({
-    sessionToken: d.text({ length: 255 }).notNull().primaryKey(),
+    sessionToken: d.varchar({ length: 255 }).notNull().primaryKey(),
     userId: d
-      .text({ length: 255 })
+      .varchar({ length: 255 })
       .notNull()
       .references(() => users.id),
-    expires: d.integer({ mode: "timestamp" }).notNull(),
+    expires: d.timestamp({ withTimezone: true }).notNull(),
   }),
   (t) => [index("session_userId_idx").on(t.userId)]
 );
@@ -96,9 +95,9 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const verificationTokens = createTable(
   "verification_token",
   (d) => ({
-    identifier: d.text({ length: 255 }).notNull(),
-    token: d.text({ length: 255 }).notNull(),
-    expires: d.integer({ mode: "timestamp" }).notNull(),
+    identifier: d.varchar({ length: 255 }).notNull(),
+    token: d.varchar({ length: 255 }).notNull(),
+    expires: d.timestamp({ withTimezone: true }).notNull(),
   }),
   (t) => [primaryKey({ columns: [t.identifier, t.token] })]
 );

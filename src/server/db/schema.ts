@@ -23,6 +23,7 @@ export const readingProgress = createTable(
     currentPage: d.integer(),
     totalPages: d.integer(),
     progress: d.real().notNull(),
+    epubUrl: d.varchar({ length: 1024 }),
     updatedAt: d
       .timestamp({ withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)

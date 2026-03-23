@@ -12,7 +12,8 @@ export function EpubUpload() {
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
-      await upload(file.name, file, {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      await upload(safeName, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
       });

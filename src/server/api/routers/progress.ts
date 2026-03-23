@@ -72,4 +72,32 @@ export const progressRouter = createTRPCRouter({
 
       return { status: "ok" as const };
     }),
+
+  linkBooks: publicProcedure
+    .input(
+      z.object({
+        keepBookId: z.string(),
+        epubBookId: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const epubBook = await ctx.db.query.readingProgress.findFirst({
+        where: eq(readingProgress.bookId, input.epubBookId),
+      });
+
+      if (!epubBook?.epubUrl) {
+        throw new Error("Source book has no EPUB URL");
+      }
+
+      await ctx.db
+        .update(readingProgress)
+        .set({ epubUrl: epubBook.epubUrl })
+        .where(eq(readingProgress.bookId, input.keepBookId));
+
+      await ctx.db
+        .delete(readingProgress)
+        .where(eq(readingProgress.bookId, input.epubBookId));
+
+      return { status: "ok" as const };
+    }),
 });

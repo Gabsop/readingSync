@@ -27,7 +27,7 @@ export async function POST(request: Request) {
       } else {
         await db.insert(readingProgress).values({
           bookId,
-          bookTitle: bookId.replace(".epub", ""),
+          bookTitle: bookId.replace(".epub", "").replace(/-+/g, " ").trim(),
           position: "0",
           progress: 0,
           epubUrl: blob.url,

@@ -11,15 +11,34 @@ export function EpubUpload() {
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/upload", {
+      // Step 1: Get presigned URL from our API
+      const tokenRes = await fetch("/api/upload", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name }),
       });
 
-      if (!res.ok) throw new Error("Upload failed");
+      if (!tokenRes.ok) throw new Error("Failed to get upload URL");
+
+      const { signedUrl, key, safeName } = await tokenRes.json();
+
+      // Step 2: Upload directly to R2 (bypasses Vercel)
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": "application/epub+zip" },
+      });
+
+      if (!uploadRes.ok) throw new Error("Upload to R2 failed");
+
+      // Step 3: Confirm upload and save to database
+      const confirmRes = await fetch("/api/upload", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, safeName }),
+      });
+
+      if (!confirmRes.ok) throw new Error("Failed to save book");
 
       await utils.progress.getAll.invalidate();
     } finally {

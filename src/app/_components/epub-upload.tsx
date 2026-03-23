@@ -16,6 +16,7 @@ export function EpubUpload() {
       await upload(safeName, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
+        multipart: true,
       });
       await utils.progress.getAll.invalidate();
     } finally {

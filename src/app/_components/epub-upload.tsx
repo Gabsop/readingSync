@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { upload } from "@vercel/blob/client";
 import { api } from "~/trpc/react";
 
 export function EpubUpload() {
@@ -12,12 +11,16 @@ export function EpubUpload() {
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-      await upload(safeName, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload",
-        multipart: true,
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
       });
+
+      if (!res.ok) throw new Error("Upload failed");
+
       await utils.progress.getAll.invalidate();
     } finally {
       setUploading(false);

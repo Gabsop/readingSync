@@ -10,11 +10,8 @@ export async function POST(request: Request) {
   const jsonResponse = await handleUpload({
     body,
     request,
-    onBeforeGenerateToken: async (pathname) => {
-      return {
-        allowedContentTypes: ["application/epub+zip"],
-        addRandomSuffix: false,
-      };
+    onBeforeGenerateToken: async () => {
+      return {};
     },
     onUploadCompleted: async ({ blob }) => {
       const bookId = blob.pathname;

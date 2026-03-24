@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { api } from "~/trpc/react";
 import Link from "next/link";
 
@@ -10,6 +10,7 @@ export function EpubReader({ bookId }: { bookId: string }) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReturnType<import("epubjs").Book["renderTo"]> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const [currentProgress, setCurrentProgress] = useState(bookData?.progress ?? 0);
 
   const saveProgress = useCallback(
     (cfi: string, progress: number) => {
@@ -33,19 +34,24 @@ export function EpubReader({ bookId }: { bookId: string }) {
         width: "100%",
         height: "100%",
         flow: "paginated",
+        spread: "none",
       });
 
       renditionRef.current = rendition;
 
-      await rendition.display();
+      // Generate locations first for accurate percentage mapping
+      await book.ready;
+      await book.locations.generate(150);
 
       if (bookData.progress > 0) {
-        await book.locations.generate(1024);
         const targetCfi = book.locations.cfiFromPercentage(bookData.progress);
         await rendition.display(targetCfi);
+      } else {
+        await rendition.display();
       }
 
       rendition.on("relocated", (location: { start: { cfi: string; percentage: number } }) => {
+        setCurrentProgress(location.start.percentage);
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
           saveProgress(location.start.cfi, location.start.percentage);
@@ -95,7 +101,7 @@ export function EpubReader({ bookId }: { bookId: string }) {
           {bookData.bookTitle ?? bookId}
         </h1>
         <span className="text-xs text-gray-400">
-          {Math.round((bookData.progress ?? 0) * 100)}%
+          {Math.round(currentProgress * 100)}%
         </span>
       </header>
       <div ref={viewerRef} className="flex-1" />

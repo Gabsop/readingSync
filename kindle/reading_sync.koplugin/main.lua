@@ -126,8 +126,17 @@ function ReadingSync:syncProgressSilent()
     if not ok_page then current_page = nil end
     if not ok_total then total_pages = nil end
 
+    -- Use document-level progress for accurate cross-device sync
     local percent = 0
-    if current_page and total_pages and total_pages > 0 then
+    local ok_progress, doc_progress = pcall(function()
+        local cur = doc:getCurrentPos()
+        local full = doc:getFullHeight()
+        if full and full > 0 then return cur / full end
+        return nil
+    end)
+    if ok_progress and doc_progress then
+        percent = doc_progress
+    elseif current_page and total_pages and total_pages > 0 then
         percent = current_page / total_pages
     end
 
@@ -169,8 +178,17 @@ function ReadingSync:syncProgress()
     if not ok_page then current_page = nil end
     if not ok_total then total_pages = nil end
 
+    -- Use document-level progress for accurate cross-device sync
     local percent = 0
-    if current_page and total_pages and total_pages > 0 then
+    local ok_progress, doc_progress = pcall(function()
+        local cur = doc:getCurrentPos()
+        local full = doc:getFullHeight()
+        if full and full > 0 then return cur / full end
+        return nil
+    end)
+    if ok_progress and doc_progress then
+        percent = doc_progress
+    elseif current_page and total_pages and total_pages > 0 then
         percent = current_page / total_pages
     end
 

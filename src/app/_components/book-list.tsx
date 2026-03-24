@@ -43,14 +43,22 @@ export function BookList() {
                     {book.currentPage != null && book.totalPages != null && (
                       <span>p. {book.currentPage}/{book.totalPages}</span>
                     )}
-                    <span>{Math.round(book.progress * 100)}%</span>
+                    <span>{(
+                      book.currentPage && book.totalPages && book.totalPages > 0
+                        ? (book.currentPage / book.totalPages) * 100
+                        : book.progress * 100
+                    ).toFixed(1)}%</span>
                   </span>
                 </div>
 
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
                   <div
                     className="h-full rounded-full bg-[hsl(280,100%,70%)] transition-all"
-                    style={{ width: `${book.progress * 100}%` }}
+                    style={{ width: `${
+                      book.currentPage && book.totalPages && book.totalPages > 0
+                        ? (book.currentPage / book.totalPages) * 100
+                        : book.progress * 100
+                    }%` }}
                   />
                 </div>
 

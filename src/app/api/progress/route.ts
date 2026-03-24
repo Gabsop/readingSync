@@ -20,11 +20,23 @@ export async function POST(request: Request) {
     total_pages?: number;
     progress: number;
     updated_at?: number;
+    render_settings?: Record<string, number | null>;
   };
 
-  const { book_id, book_title, position, current_page, total_pages, progress, updated_at } = body;
+  const { book_id, book_title, position, current_page, total_pages, progress, updated_at, render_settings } = body;
+
+  console.log("[sync POST]", {
+    book_id,
+    book_title,
+    position,
+    current_page,
+    total_pages,
+    progress,
+    render_settings,
+  });
 
   if (!book_id || !position || progress == null) {
+    console.log("[sync POST] rejected — missing required fields", { book_id, position, progress });
     return NextResponse.json(
       { status: "error", message: "Missing required fields" },
       { status: 400 },
@@ -39,6 +51,18 @@ export async function POST(request: Request) {
 
   if (existing) {
     if (existing.updatedAt >= timestamp) {
+      // Position is stale, but always update renderSettings if provided
+      if (render_settings) {
+        await db
+          .update(readingProgress)
+          .set({ renderSettings: JSON.stringify(render_settings) })
+          .where(eq(readingProgress.bookId, book_id));
+      }
+      console.log("[sync POST] skipped position — local is newer, renderSettings updated:", !!render_settings, {
+        book_id,
+        local: existing.updatedAt.toISOString(),
+        incoming: timestamp.toISOString(),
+      });
       return NextResponse.json({ status: "skipped", reason: "local is newer" });
     }
 
@@ -50,6 +74,7 @@ export async function POST(request: Request) {
         totalPages: total_pages ?? existing.totalPages,
         progress,
         bookTitle: book_title ?? existing.bookTitle,
+        renderSettings: render_settings ? JSON.stringify(render_settings) : existing.renderSettings,
         updatedAt: timestamp,
       })
       .where(eq(readingProgress.bookId, book_id));
@@ -61,6 +86,7 @@ export async function POST(request: Request) {
       currentPage: current_page,
       totalPages: total_pages,
       progress,
+      renderSettings: render_settings ? JSON.stringify(render_settings) : null,
       updatedAt: timestamp,
     });
   }

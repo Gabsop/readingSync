@@ -121,10 +121,12 @@ function ReadingSync:syncProgressSilent()
     local ok_pos, pos = pcall(function() return doc:getCurrentPos() end)
     local ok_page, current_page = pcall(function() return self.ui:getCurrentPage() end)
     local ok_total, total_pages = pcall(function() return doc:getPageCount() end)
+    local ok_xp, xpointer = pcall(function() return doc:getXPointer() end)
 
     if not ok_pos then pos = "0" end
     if not ok_page then current_page = nil end
     if not ok_total then total_pages = nil end
+    if not ok_xp then xpointer = nil end
 
     -- Use document-level progress for accurate cross-device sync
     local percent = 0
@@ -144,14 +146,46 @@ function ReadingSync:syncProgressSilent()
     local filepath = doc.file or "unknown"
     local book_title = filepath:match("([^/]+)%.[^.]+$") or book_id
 
+    -- Capture rendering settings for web reader matching
+    local ok_font, font_size = pcall(function() return doc:getFontSize() end)
+    local ok_margin, margins = pcall(function() return doc:getPageMargins() end)
+    local ok_lh, line_height = pcall(function() return doc:getInterlineSpacing() end)
+    local screen_w, screen_h = 0, 0
+    pcall(function()
+        local Screen = require("device").screen
+        screen_w = Screen:getWidth()
+        screen_h = Screen:getHeight()
+    end)
+
+    if not ok_font then font_size = nil end
+    if not ok_lh then line_height = nil end
+
+    local margin_top, margin_bottom, margin_left, margin_right = 0, 0, 0, 0
+    if ok_margin and margins then
+        margin_top = margins[1] or 0
+        margin_bottom = margins[2] or 0
+        margin_left = margins[3] or 0
+        margin_right = margins[4] or 0
+    end
+
     local data = {
         book_id = book_id,
         book_title = book_title,
-        position = tostring(pos),
+        position = xpointer or tostring(pos),
         current_page = current_page,
         total_pages = total_pages,
         progress = percent,
         updated_at = os.time(),
+        render_settings = {
+            font_size = font_size,
+            line_height = line_height,
+            screen_width = screen_w,
+            screen_height = screen_h,
+            margin_top = margin_top,
+            margin_bottom = margin_bottom,
+            margin_left = margin_left,
+            margin_right = margin_right,
+        },
     }
 
     local code = postProgress(data)
@@ -173,10 +207,12 @@ function ReadingSync:syncProgress()
     local ok_pos, pos = pcall(function() return doc:getCurrentPos() end)
     local ok_page, current_page = pcall(function() return self.ui:getCurrentPage() end)
     local ok_total, total_pages = pcall(function() return doc:getPageCount() end)
+    local ok_xp, xpointer = pcall(function() return doc:getXPointer() end)
 
     if not ok_pos then pos = "0" end
     if not ok_page then current_page = nil end
     if not ok_total then total_pages = nil end
+    if not ok_xp then xpointer = nil end
 
     -- Use document-level progress for accurate cross-device sync
     local percent = 0
@@ -196,14 +232,46 @@ function ReadingSync:syncProgress()
     local filepath = doc.file or "unknown"
     local book_title = filepath:match("([^/]+)%.[^.]+$") or book_id
 
+    -- Capture rendering settings for web reader matching
+    local ok_font, font_size = pcall(function() return doc:getFontSize() end)
+    local ok_margin, margins = pcall(function() return doc:getPageMargins() end)
+    local ok_lh, line_height = pcall(function() return doc:getInterlineSpacing() end)
+    local screen_w, screen_h = 0, 0
+    pcall(function()
+        local Screen = require("device").screen
+        screen_w = Screen:getWidth()
+        screen_h = Screen:getHeight()
+    end)
+
+    if not ok_font then font_size = nil end
+    if not ok_lh then line_height = nil end
+
+    local margin_top, margin_bottom, margin_left, margin_right = 0, 0, 0, 0
+    if ok_margin and margins then
+        margin_top = margins[1] or 0
+        margin_bottom = margins[2] or 0
+        margin_left = margins[3] or 0
+        margin_right = margins[4] or 0
+    end
+
     local data = {
         book_id = book_id,
         book_title = book_title,
-        position = tostring(pos),
+        position = xpointer or tostring(pos),
         current_page = current_page,
         total_pages = total_pages,
         progress = percent,
         updated_at = os.time(),
+        render_settings = {
+            font_size = font_size,
+            line_height = line_height,
+            screen_width = screen_w,
+            screen_height = screen_h,
+            margin_top = margin_top,
+            margin_bottom = margin_bottom,
+            margin_left = margin_left,
+            margin_right = margin_right,
+        },
     }
 
     log("Syncing: " .. book_id .. " page " .. tostring(current_page) .. "/" .. tostring(total_pages))

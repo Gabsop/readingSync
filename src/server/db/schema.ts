@@ -29,6 +29,27 @@ export const readingProgress = createTable(
   (t) => [index("book_id_idx").on(t.bookId)]
 );
 
+export const syncHistory = createTable(
+  "sync_history",
+  (d) => ({
+    id: d.integer().primaryKey().generatedAlwaysAsIdentity(),
+    bookId: d.varchar({ length: 512 }).notNull(),
+    position: d.varchar({ length: 1024 }).notNull(),
+    currentPage: d.integer(),
+    totalPages: d.integer(),
+    progress: d.real().notNull(),
+    source: d.varchar({ length: 32 }).notNull(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  }),
+  (t) => [
+    index("sync_history_book_id_idx").on(t.bookId),
+    index("sync_history_book_source_idx").on(t.bookId, t.source),
+  ]
+);
+
 export const users = createTable("user", (d) => ({
   id: d
     .varchar({ length: 255 })

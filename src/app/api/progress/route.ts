@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { db } from "~/server/db";
-import { readingProgress } from "~/server/db/schema";
+import { readingProgress, syncHistory } from "~/server/db/schema";
 
 export async function GET() {
   const all = await db.query.readingProgress.findMany({
@@ -91,6 +91,19 @@ export async function POST(request: Request) {
       renderSettings: render_settings ? JSON.stringify(render_settings) : null,
       source,
       updatedAt: timestamp,
+    });
+  }
+
+  // Record in sync history
+  if (source) {
+    await db.insert(syncHistory).values({
+      bookId: book_id,
+      position,
+      currentPage: current_page,
+      totalPages: total_pages,
+      progress,
+      source,
+      createdAt: timestamp,
     });
   }
 

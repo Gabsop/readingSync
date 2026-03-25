@@ -40,16 +40,30 @@ local function postProgress(data)
     return code, table.concat(response)
 end
 
-local function getProgress(bookId)
+local function urlEncode(str)
+    return str:gsub("([^%w%-%.%_%~])", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end)
+end
+
+local function getProgress(bookId, source)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
     local response = {}
 
+    local url = API_URL .. "/" .. urlEncode(bookId)
+    if source then
+        url = url .. "?source=" .. urlEncode(source)
+    end
+    log("GET " .. url)
+
     local _, code = http.request{
-        url = API_URL .. "/" .. bookId,
+        url = url,
         method = "GET",
         sink = ltn12.sink.table(response),
     }
+
+    log("GET response: " .. tostring(code) .. " " .. table.concat(response))
 
     if code == 200 then
         return JSON.decode(table.concat(response))
@@ -106,12 +120,6 @@ function ReadingSync:addToMainMenu(menu_items)
                 text = "Sync from web reader",
                 callback = function()
                     self:syncFromWeb()
-                end,
-            },
-            {
-                text = "Fetch remote progress",
-                callback = function()
-                    self:fetchRemoteProgress()
                 end,
             },
         },
@@ -430,19 +438,11 @@ function ReadingSync:syncFromWeb()
     local book_id = getBookId(doc)
     log("Sync from web: fetching for " .. book_id)
 
-    local remote = getProgress(book_id)
+    local remote = getProgress(book_id, "web")
 
     if not remote then
         UIManager:show(InfoMessage:new{
-            text = "No remote progress found",
-            timeout = 3,
-        })
-        return
-    end
-
-    if remote.source ~= "web" then
-        UIManager:show(InfoMessage:new{
-            text = "Last update was from Kindle, not web reader",
+            text = "No web reader progress found for this book",
             timeout = 3,
         })
         return
@@ -472,36 +472,6 @@ function ReadingSync:syncFromWeb()
             })
         end,
     })
-end
-
-function ReadingSync:fetchRemoteProgress()
-    if not self.ui or not self.ui.document then
-        log("No document open")
-        return
-    end
-
-    local book_id = getBookId(self.ui.document)
-    log("Fetching remote progress for: " .. book_id)
-
-    local remote = getProgress(book_id)
-
-    if remote then
-        local msg = "Remote: " .. math.floor(remote.progress * 100) .. "%"
-        if remote.current_page and remote.total_pages then
-            msg = msg .. " (page " .. remote.current_page .. "/" .. remote.total_pages .. ")"
-        end
-        UIManager:show(InfoMessage:new{
-            text = msg,
-            timeout = 4,
-        })
-        log("Remote progress: " .. msg)
-    else
-        UIManager:show(InfoMessage:new{
-            text = "No remote progress found",
-            timeout = 3,
-        })
-        log("No remote progress found for: " .. book_id)
-    end
 end
 
 return ReadingSync

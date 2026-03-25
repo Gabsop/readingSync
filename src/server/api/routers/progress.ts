@@ -2,7 +2,7 @@ import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
-import { readingProgress } from "~/server/db/schema";
+import { readingProgress, syncHistory } from "~/server/db/schema";
 
 export const progressRouter = createTRPCRouter({
   getAll: publicProcedure.query(async ({ ctx }) => {
@@ -70,6 +70,19 @@ export const progressRouter = createTRPCRouter({
           progress: input.progress,
           source: input.source,
           updatedAt: timestamp,
+        });
+      }
+
+      // Record in sync history
+      if (input.source) {
+        await ctx.db.insert(syncHistory).values({
+          bookId: input.bookId,
+          position: input.position,
+          currentPage: input.currentPage,
+          totalPages: input.totalPages,
+          progress: input.progress,
+          source: input.source,
+          createdAt: timestamp,
         });
       }
 

@@ -39,6 +39,86 @@ function parseXPointerPath(xpointer: string) {
 export function EpubReader({ bookId }: { bookId: string }) {
   const [bookData] = api.progress.getByBookId.useSuspenseQuery({ bookId });
   const saveMutation = api.progress.save.useMutation();
+  const lastSyncedPositionRef = useRef<string>("");
+  const hasUserNavigatedRef = useRef(false);
+  const initDoneRef = useRef(false);
+
+  // Poll for remote position changes every 5 seconds
+  const { data: polledData } = api.progress.getByBookId.useQuery(
+    { bookId },
+    { refetchInterval: 5000 },
+  );
+
+  // Re-navigate when remote position changes (from Kindle sync)
+  useEffect(() => {
+    if (!initDoneRef.current) return;
+    if (!polledData?.position || !renditionRef.current) return;
+    if (polledData.position === lastSyncedPositionRef.current) return;
+
+    lastSyncedPositionRef.current = polledData.position;
+    const rendition = renditionRef.current;
+
+    const position = polledData.position;
+    if (position.startsWith("epubcfi(")) {
+      void rendition.display(position);
+    } else if (position.includes("DocFragment")) {
+      const spineMatch = position.match(/DocFragment\[(\d+)\]/);
+      if (spineMatch) {
+        const spineIndex = parseInt(spineMatch[1]!, 10) - 1;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const book = (rendition as any).book;
+        const spineItem = book?.spine?.get(spineIndex);
+        if (spineItem) {
+          void (async () => {
+            await rendition.display(spineItem.href);
+
+            // Refine within chapter using xpointer path
+            const pathInfo = parseXPointerPath(position);
+            if (!pathInfo) return;
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const contents = (rendition as any).getContents()[0] as {
+                document: Document;
+                cfiFromNode: (node: Node) => { toString: () => string };
+                cfiFromRange: (range: Range) => { toString: () => string };
+              } | undefined;
+
+              const el = contents?.document?.body?.querySelector(
+                `:scope > ${pathInfo.selector}`,
+              );
+              if (el && contents) {
+                let cfi;
+                if (pathInfo.textOffset !== undefined) {
+                  const walker = contents.document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+                  let charCount = 0;
+                  let textNode = walker.nextNode();
+                  while (textNode) {
+                    const len = textNode.textContent?.length ?? 0;
+                    if (charCount + len > pathInfo.textOffset) {
+                      const range = contents.document.createRange();
+                      range.setStart(textNode, pathInfo.textOffset - charCount);
+                      range.collapse(true);
+                      cfi = contents.cfiFromRange(range);
+                      break;
+                    }
+                    charCount += len;
+                    textNode = walker.nextNode();
+                  }
+                  if (!cfi) cfi = contents.cfiFromNode(el);
+                } else {
+                  cfi = contents.cfiFromNode(el);
+                }
+                if (cfi) await rendition.display(cfi.toString());
+              }
+            } catch (err) {
+              console.warn("[reader] poll refinement failed", err);
+            }
+          })();
+        }
+      }
+    }
+  }, [polledData?.position]);
+
   const viewerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReturnType<import("epubjs").Book["renderTo"]> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
@@ -68,6 +148,7 @@ export function EpubReader({ bookId }: { bookId: string }) {
         margin_bottom?: number;
         margin_left?: number;
         margin_right?: number;
+        font_face?: string;
       };
     } catch {
       return null;
@@ -76,9 +157,11 @@ export function EpubReader({ bookId }: { bookId: string }) {
 
   console.log("[reader] raw renderSettings", bookData?.renderSettings, "parsed:", kindleSettings);
 
-  // Kindle's line_height is a percentage (e.g. 130 → 1.3), default to 1.4
+  // CREngine's line_spacing is a percentage of the font's natural line height.
+  // 100 = font's default spacing ≈ CSS line-height 1.2
+  // We scale: CREngine 100% → CSS 1.2, CREngine 130% → CSS 1.56, etc.
   const lineHeight = kindleSettings?.line_height
-    ? kindleSettings.line_height / 100
+    ? (kindleSettings.line_height / 100) * 1.2
     : 1.4;
 
   // Compute viewer to match Kindle's content area (screen minus page margins).
@@ -121,10 +204,12 @@ export function EpubReader({ bookId }: { bookId: string }) {
 
   const saveProgress = useCallback(
     (cfi: string, progress: number) => {
+      lastSyncedPositionRef.current = cfi;
       saveMutation.mutate({
         bookId,
         position: cfi,
         progress,
+        source: "web",
       });
     },
     [bookId, saveMutation],
@@ -144,8 +229,41 @@ export function EpubReader({ bookId }: { bookId: string }) {
         spread: "none",
       });
 
+      // Use Kindle's font face if available, fallback to Noto Serif
+      const fontFace = kindleSettings?.font_face && kindleSettings.font_face !== "unknown"
+        ? kindleSettings.font_face
+        : "Noto Serif";
+      const googleFontParam = fontFace.replace(/\s+/g, "+");
+
+      console.log("[reader] using font:", fontFace);
+
+      // Inject Google Fonts + force font override into each chapter's iframe DOM
+      // (themes.register @import doesn't work in sandboxed iframes,
+      //  and body-level font-family doesn't override element-level EPUB CSS)
+      rendition.hooks.content.register((contents: { document: Document }) => {
+        const doc = contents.document;
+
+        // Ensure lang is set for hyphenation to work
+        if (!doc.documentElement.lang) {
+          doc.documentElement.lang = "pt";
+        }
+        console.log("[reader] iframe lang:", doc.documentElement.lang);
+
+        const link = doc.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `https://fonts.googleapis.com/css2?family=${googleFontParam}:ital,wght@0,400;0,700;1,400;1,700&display=swap`;
+        doc.head.appendChild(link);
+
+        const style = doc.createElement("style");
+        style.textContent = `* { font-family: '${fontFace}', serif !important; -webkit-hyphens: auto !important; hyphens: auto !important; }
+p, div, span, a, li, td, th, blockquote, dd, dt { font-weight: 400 !important; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { word-spacing: 1px !important; letter-spacing: 0px !important; text-align: justify !important; }`;
+        doc.head.appendChild(style);
+      });
+
       rendition.themes.default({
         body: {
+          "font-family": `'${fontFace}', serif !important`,
           "font-size": `${fontSize}px !important`,
           "line-height": `${lineHeight} !important`,
         },
@@ -154,7 +272,6 @@ export function EpubReader({ bookId }: { bookId: string }) {
       renditionRef.current = rendition;
 
       await book.ready;
-      await book.locations.generate(1024);
 
       const position = bookData.position;
       let displayed = false;
@@ -237,14 +354,22 @@ export function EpubReader({ bookId }: { bookId: string }) {
         }
       }
 
+      // Mark the initial position so polling doesn't re-navigate to it
+      if (position) {
+        lastSyncedPositionRef.current = position;
+      }
+      initDoneRef.current = true;
+
       if (!displayed) {
-        // Fallback to percentage-based navigation
+        // Fallback to percentage-based navigation (requires locations)
         const syncPercent =
           bookData.currentPage && bookData.totalPages && bookData.totalPages > 0
             ? bookData.currentPage / bookData.totalPages
             : bookData.progress;
 
         if (syncPercent > 0) {
+          // Only generate locations when we actually need the percentage fallback
+          await book.locations.generate(1024);
           const targetCfi = book.locations.cfiFromPercentage(syncPercent);
           await rendition.display(targetCfi);
         } else {
@@ -252,8 +377,14 @@ export function EpubReader({ bookId }: { bookId: string }) {
         }
       }
 
+      // Skip saving the initial relocated event — it reports page-start CFI
+      // which is less precise than the Kindle xpointer we navigated to
       rendition.on("relocated", (location: { start: { cfi: string; percentage: number } }) => {
         setCurrentProgress(location.start.percentage);
+        if (!hasUserNavigatedRef.current) {
+          hasUserNavigatedRef.current = true;
+          return;
+        }
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
           saveProgress(location.start.cfi, location.start.percentage);
@@ -269,6 +400,8 @@ export function EpubReader({ bookId }: { bookId: string }) {
       return () => {
         document.removeEventListener("keydown", handleKeyDown);
         if (debounceRef.current) clearTimeout(debounceRef.current);
+        hasUserNavigatedRef.current = false;
+        initDoneRef.current = false;
         book.destroy();
       };
     };
@@ -282,15 +415,18 @@ export function EpubReader({ bookId }: { bookId: string }) {
 
   useEffect(() => {
     if (!renditionRef.current) return;
+    const fontFace = kindleSettings?.font_face && kindleSettings.font_face !== "unknown"
+      ? kindleSettings.font_face
+      : "Noto Serif";
     renditionRef.current.themes.default({
       body: {
+        "font-family": `'${fontFace}', serif !important`,
         "font-size": `${fontSize}px !important`,
         "line-height": `${lineHeight} !important`,
-        "padding": "0 1em !important",
       },
     });
     renditionRef.current.resize(viewerWidth, viewerHeight);
-  }, [fontSize, lineHeight, viewerWidth, viewerHeight]);
+  }, [fontSize, lineHeight, viewerWidth, viewerHeight, kindleSettings?.font_face]);
 
   if (!bookData?.epubUrl) {
     return (

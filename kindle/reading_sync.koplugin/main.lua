@@ -2,6 +2,7 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local JSON = require("json")
 local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
+local ConfirmBox = require("ui/widget/confirmbox")
 
 local ReadingSync = WidgetContainer:extend{
     name = "reading_sync",
@@ -102,6 +103,12 @@ function ReadingSync:addToMainMenu(menu_items)
                 end,
             },
             {
+                text = "Sync from web reader",
+                callback = function()
+                    self:syncFromWeb()
+                end,
+            },
+            {
                 text = "Fetch remote progress",
                 callback = function()
                     self:fetchRemoteProgress()
@@ -150,6 +157,9 @@ function ReadingSync:syncProgressSilent()
     local ok_font, font_size = pcall(function() return doc:getFontSize() end)
     local ok_margin, margins = pcall(function() return doc:getPageMargins() end)
     local ok_lh, line_height = pcall(function() return doc:getInterlineSpacing() end)
+    if not ok_lh or not line_height then
+        ok_lh, line_height = pcall(function() return doc:getIntProperty("crengine.interline.space") end)
+    end
     local screen_w, screen_h = 0, 0
     pcall(function()
         local Screen = require("device").screen
@@ -168,6 +178,58 @@ function ReadingSync:syncProgressSilent()
         margin_right = margins[4] or 0
     end
 
+    -- Try to get font face name via multiple approaches
+    local font_face = "unknown"
+    -- 1) KOReader's ReaderFont stores the font face in self.ui.font
+    pcall(function()
+        if self.ui.font and self.ui.font.font_face then
+            font_face = self.ui.font.font_face
+        end
+    end)
+    -- 2) Try CREngine document property
+    if font_face == "unknown" then
+        pcall(function()
+            local f = doc:getStringProperty("font.face.default")
+            if f and f ~= "" then font_face = f end
+        end)
+    end
+    -- 3) Try reading the setting from G_reader_settings
+    if font_face == "unknown" then
+        pcall(function()
+            local G = require("luasettings"):open(
+                require("datastorage"):getSettingsDir() .. "/settings.reader.lua"
+            )
+            local f = G:readSetting("copt_font_face")
+            if f then font_face = f end
+        end)
+    end
+    -- 4) Try G_reader_settings global
+    if font_face == "unknown" then
+        pcall(function()
+            local f = G_reader_settings:readSetting("copt_font_face")
+            if f then font_face = f end
+        end)
+    end
+
+    log("font_face detection: " .. tostring(font_face))
+
+    -- Read configurable values (the actual source of truth)
+    local cfg = {}
+    pcall(function()
+        if self.ui.document and self.ui.document.configurable then
+            cfg = self.ui.document.configurable
+        end
+    end)
+
+    -- Use configurable margins as fallback when getPageMargins returns 0
+    if margin_top == 0 and cfg.t_page_margin then margin_top = cfg.t_page_margin end
+    if margin_bottom == 0 and cfg.b_page_margin then margin_bottom = cfg.b_page_margin end
+
+    -- line_height from configurable (percentage, e.g. 100 = 1.0)
+    if not line_height and cfg.line_spacing then
+        line_height = cfg.line_spacing
+    end
+
     local data = {
         book_id = book_id,
         book_title = book_title,
@@ -176,6 +238,7 @@ function ReadingSync:syncProgressSilent()
         total_pages = total_pages,
         progress = percent,
         updated_at = os.time(),
+        source = "kindle",
         render_settings = {
             font_size = font_size,
             line_height = line_height,
@@ -185,14 +248,19 @@ function ReadingSync:syncProgressSilent()
             margin_bottom = margin_bottom,
             margin_left = margin_left,
             margin_right = margin_right,
+            font_face = font_face,
+            font_base_weight = cfg.font_base_weight,
+            font_gamma = cfg.font_gamma,
+            font_hinting = cfg.font_hinting,
+            font_kerning = cfg.font_kerning,
+            word_expansion = cfg.word_expansion,
+            embedded_fonts = cfg.embedded_fonts,
+            embedded_css = cfg.embedded_css,
+            render_dpi = cfg.render_dpi,
         },
     }
 
-    log("render_settings: font=" .. tostring(font_size)
-        .. " lh=" .. tostring(line_height)
-        .. " screen=" .. tostring(screen_w) .. "x" .. tostring(screen_h)
-        .. " margins=" .. tostring(margin_top) .. "/" .. tostring(margin_bottom)
-        .. "/" .. tostring(margin_left) .. "/" .. tostring(margin_right))
+    log("render_settings: " .. JSON.encode(data.render_settings))
 
     local code = postProgress(data)
     if code == 200 then
@@ -242,6 +310,9 @@ function ReadingSync:syncProgress()
     local ok_font, font_size = pcall(function() return doc:getFontSize() end)
     local ok_margin, margins = pcall(function() return doc:getPageMargins() end)
     local ok_lh, line_height = pcall(function() return doc:getInterlineSpacing() end)
+    if not ok_lh or not line_height then
+        ok_lh, line_height = pcall(function() return doc:getIntProperty("crengine.interline.space") end)
+    end
     local screen_w, screen_h = 0, 0
     pcall(function()
         local Screen = require("device").screen
@@ -260,6 +331,45 @@ function ReadingSync:syncProgress()
         margin_right = margins[4] or 0
     end
 
+    -- Try to get font face name via multiple approaches
+    local font_face = "unknown"
+    pcall(function()
+        if self.ui.font and self.ui.font.font_face then
+            font_face = self.ui.font.font_face
+        end
+    end)
+    if font_face == "unknown" then
+        pcall(function()
+            local f = doc:getStringProperty("font.face.default")
+            if f and f ~= "" then font_face = f end
+        end)
+    end
+    if font_face == "unknown" then
+        pcall(function()
+            local f = G_reader_settings:readSetting("copt_font_face")
+            if f then font_face = f end
+        end)
+    end
+
+    log("font_face detection: " .. tostring(font_face))
+
+    -- Read configurable values (the actual source of truth)
+    local cfg = {}
+    pcall(function()
+        if self.ui.document and self.ui.document.configurable then
+            cfg = self.ui.document.configurable
+        end
+    end)
+
+    -- Use configurable margins as fallback when getPageMargins returns 0
+    if margin_top == 0 and cfg.t_page_margin then margin_top = cfg.t_page_margin end
+    if margin_bottom == 0 and cfg.b_page_margin then margin_bottom = cfg.b_page_margin end
+
+    -- line_height from configurable (percentage, e.g. 100 = 1.0)
+    if not line_height and cfg.line_spacing then
+        line_height = cfg.line_spacing
+    end
+
     local data = {
         book_id = book_id,
         book_title = book_title,
@@ -268,6 +378,7 @@ function ReadingSync:syncProgress()
         total_pages = total_pages,
         progress = percent,
         updated_at = os.time(),
+        source = "kindle",
         render_settings = {
             font_size = font_size,
             line_height = line_height,
@@ -277,15 +388,20 @@ function ReadingSync:syncProgress()
             margin_bottom = margin_bottom,
             margin_left = margin_left,
             margin_right = margin_right,
+            font_face = font_face,
+            font_base_weight = cfg.font_base_weight,
+            font_gamma = cfg.font_gamma,
+            font_hinting = cfg.font_hinting,
+            font_kerning = cfg.font_kerning,
+            word_expansion = cfg.word_expansion,
+            embedded_fonts = cfg.embedded_fonts,
+            embedded_css = cfg.embedded_css,
+            render_dpi = cfg.render_dpi,
         },
     }
 
     log("Syncing: " .. book_id .. " page " .. tostring(current_page) .. "/" .. tostring(total_pages))
-    log("render_settings: font=" .. tostring(font_size)
-        .. " lh=" .. tostring(line_height)
-        .. " screen=" .. tostring(screen_w) .. "x" .. tostring(screen_h)
-        .. " margins=" .. tostring(margin_top) .. "/" .. tostring(margin_bottom)
-        .. "/" .. tostring(margin_left) .. "/" .. tostring(margin_right))
+    log("render_settings: " .. JSON.encode(data.render_settings))
 
     local code, response = postProgress(data)
 
@@ -302,6 +418,60 @@ function ReadingSync:syncProgress()
             timeout = 3,
         })
     end
+end
+
+function ReadingSync:syncFromWeb()
+    if not self.ui or not self.ui.document then
+        log("No document open")
+        return
+    end
+
+    local doc = self.ui.document
+    local book_id = getBookId(doc)
+    log("Sync from web: fetching for " .. book_id)
+
+    local remote = getProgress(book_id)
+
+    if not remote then
+        UIManager:show(InfoMessage:new{
+            text = "No remote progress found",
+            timeout = 3,
+        })
+        return
+    end
+
+    if remote.source ~= "web" then
+        UIManager:show(InfoMessage:new{
+            text = "Last update was from Kindle, not web reader",
+            timeout = 3,
+        })
+        return
+    end
+
+    local remote_page = remote.current_page or math.floor(remote.progress * (doc:getPageCount() or 0))
+    local total = remote.total_pages or doc:getPageCount() or 0
+    local remote_pct = math.floor(remote.progress * 100)
+
+    UIManager:show(ConfirmBox:new{
+        text = "In the web reader you stopped at page " .. tostring(remote_page)
+            .. "/" .. tostring(total) .. " (" .. remote_pct .. "%).\n\n"
+            .. "Do you want to sync to that position?",
+        ok_text = "Yes, sync",
+        cancel_text = "No",
+        ok_callback = function()
+            log("Sync from web: navigating to " .. tostring(remote.progress))
+            local target_page = math.floor(remote.progress * doc:getPageCount())
+            pcall(function()
+                self.ui:handleEvent(
+                    require("ui/event"):new("GotoPage", target_page)
+                )
+            end)
+            UIManager:show(InfoMessage:new{
+                text = "Synced to page " .. tostring(target_page),
+                timeout = 2,
+            })
+        end,
+    })
 end
 
 function ReadingSync:fetchRemoteProgress()

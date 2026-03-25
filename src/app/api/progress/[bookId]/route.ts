@@ -27,6 +27,7 @@ export async function GET(
     current_page: entry.currentPage,
     total_pages: entry.totalPages,
     progress: entry.progress,
+    source: entry.source,
     updated_at: Math.floor(entry.updatedAt.getTime() / 1000),
   });
 }

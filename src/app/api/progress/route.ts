@@ -20,10 +20,11 @@ export async function POST(request: Request) {
     total_pages?: number;
     progress: number;
     updated_at?: number;
-    render_settings?: Record<string, number | null>;
+    render_settings?: Record<string, number | string | null>;
+    source?: string;
   };
 
-  const { book_id, book_title, position, current_page, total_pages, progress, updated_at, render_settings } = body;
+  const { book_id, book_title, position, current_page, total_pages, progress, updated_at, render_settings, source } = body;
 
   console.log("[sync POST]", {
     book_id,
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
         progress,
         bookTitle: book_title ?? existing.bookTitle,
         renderSettings: render_settings ? JSON.stringify(render_settings) : existing.renderSettings,
+        source: source ?? existing.source,
         updatedAt: timestamp,
       })
       .where(eq(readingProgress.bookId, book_id));
@@ -87,6 +89,7 @@ export async function POST(request: Request) {
       totalPages: total_pages,
       progress,
       renderSettings: render_settings ? JSON.stringify(render_settings) : null,
+      source,
       updatedAt: timestamp,
     });
   }

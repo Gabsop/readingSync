@@ -31,6 +31,7 @@ export const progressRouter = createTRPCRouter({
         totalPages: z.number().int().optional(),
         progress: z.number().min(0).max(1),
         updatedAt: z.number().optional(),
+        source: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -55,6 +56,7 @@ export const progressRouter = createTRPCRouter({
             totalPages: input.totalPages ?? existing.totalPages,
             progress: input.progress,
             bookTitle: input.bookTitle ?? existing.bookTitle,
+            source: input.source ?? existing.source,
             updatedAt: timestamp,
           })
           .where(eq(readingProgress.bookId, input.bookId));
@@ -66,6 +68,7 @@ export const progressRouter = createTRPCRouter({
           currentPage: input.currentPage,
           totalPages: input.totalPages,
           progress: input.progress,
+          source: input.source,
           updatedAt: timestamp,
         });
       }

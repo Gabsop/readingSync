@@ -188,6 +188,12 @@ function ReadingSync:syncProgressSilent()
         },
     }
 
+    log("render_settings: font=" .. tostring(font_size)
+        .. " lh=" .. tostring(line_height)
+        .. " screen=" .. tostring(screen_w) .. "x" .. tostring(screen_h)
+        .. " margins=" .. tostring(margin_top) .. "/" .. tostring(margin_bottom)
+        .. "/" .. tostring(margin_left) .. "/" .. tostring(margin_right))
+
     local code = postProgress(data)
     if code == 200 then
         log("Auto-sync OK: page " .. tostring(current_page))
@@ -275,6 +281,11 @@ function ReadingSync:syncProgress()
     }
 
     log("Syncing: " .. book_id .. " page " .. tostring(current_page) .. "/" .. tostring(total_pages))
+    log("render_settings: font=" .. tostring(font_size)
+        .. " lh=" .. tostring(line_height)
+        .. " screen=" .. tostring(screen_w) .. "x" .. tostring(screen_h)
+        .. " margins=" .. tostring(margin_top) .. "/" .. tostring(margin_bottom)
+        .. "/" .. tostring(margin_left) .. "/" .. tostring(margin_right))
 
     local code, response = postProgress(data)
 

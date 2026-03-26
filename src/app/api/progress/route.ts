@@ -76,6 +76,7 @@ export async function POST(request: Request) {
         totalPages: total_pages ?? existing.totalPages,
         progress,
         bookTitle: book_title ?? existing.bookTitle,
+        epubUrl: existing.epubUrl,
         renderSettings: render_settings ? JSON.stringify(render_settings) : existing.renderSettings,
         excerpt: excerpt ?? existing.excerpt,
         source: source ?? existing.source,

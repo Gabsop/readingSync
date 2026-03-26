@@ -34,6 +34,7 @@ export async function GET(
       current_page: entry.currentPage,
       total_pages: entry.totalPages,
       progress: entry.progress,
+      excerpt: entry.excerpt,
       source: entry.source,
       updated_at: Math.floor(entry.createdAt.getTime() / 1000),
     });
@@ -58,6 +59,7 @@ export async function GET(
     current_page: entry.currentPage,
     total_pages: entry.totalPages,
     progress: entry.progress,
+    excerpt: entry.excerpt,
     source: entry.source,
     updated_at: Math.floor(entry.updatedAt.getTime() / 1000),
   });

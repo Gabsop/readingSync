@@ -42,6 +42,8 @@ export function EpubReader({ bookId }: { bookId: string }) {
   const lastSyncedPositionRef = useRef<string>("");
   const hasUserNavigatedRef = useRef(false);
   const initDoneRef = useRef(false);
+  const goNextRef = useRef<() => void>(null);
+  const goPrevRef = useRef<() => void>(null);
 
   // Poll for remote position changes every 5 seconds
   const { data: polledData } = api.progress.getByBookId.useQuery(
@@ -122,11 +124,9 @@ export function EpubReader({ bookId }: { bookId: string }) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<ReturnType<import("epubjs").Book["renderTo"]> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const initialPercent =
-    bookData?.currentPage && bookData?.totalPages && bookData.totalPages > 0
-      ? bookData.currentPage / bookData.totalPages
-      : bookData?.progress ?? 0;
-  const [currentProgress, setCurrentProgress] = useState(initialPercent);
+  const [currentPage, setCurrentPage] = useState(bookData?.currentPage ?? 0);
+  const totalPages = bookData?.totalPages ?? 0;
+  const currentProgress = totalPages > 0 ? currentPage / totalPages : 0;
   const [fontSize, setFontSize] = useState(() => {
     if (typeof window !== "undefined") {
       return parseInt(localStorage.getItem("reader-font-size") ?? "22", 10);
@@ -134,6 +134,18 @@ export function EpubReader({ bookId }: { bookId: string }) {
     return 22;
   });
   const [showSettings, setShowSettings] = useState(false);
+  const [widthAdjust, setWidthAdjust] = useState(() => {
+    if (typeof window !== "undefined") {
+      return parseInt(localStorage.getItem("reader-width-adjust") ?? "0", 10);
+    }
+    return 0;
+  });
+  const [heightAdjust, setHeightAdjust] = useState(() => {
+    if (typeof window !== "undefined") {
+      return parseInt(localStorage.getItem("reader-height-adjust") ?? "0", 10);
+    }
+    return 0;
+  });
 
   // Parse Kindle render settings to match page dimensions
   const kindleSettings = useMemo(() => {
@@ -187,8 +199,8 @@ export function EpubReader({ bookId }: { bookId: string }) {
 
     const linesPerPage = contentHEm / lineHeight;
 
-    const width = Math.round(contentWEm * fontSize);
-    const height = Math.round(linesPerPage * fontSize * lineHeight);
+    const width = Math.round(contentWEm * fontSize) + widthAdjust;
+    const height = Math.round(linesPerPage * fontSize * lineHeight) + heightAdjust;
 
     console.log("[reader] kindle viewport match", {
       kindleFontSize: kFont,
@@ -200,19 +212,40 @@ export function EpubReader({ bookId }: { bookId: string }) {
     });
 
     return { viewerWidth: width, viewerHeight: height };
-  }, [kindleSettings, fontSize, lineHeight]);
+  }, [kindleSettings, fontSize, lineHeight, widthAdjust, heightAdjust]);
+
+  const getExcerpt = useCallback(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const contents = (renditionRef.current as any)?.getContents()?.[0] as
+        { document: Document; window: Window } | undefined;
+      if (!contents?.document?.body) return "";
+      // Get the first visible text node by checking what's at the top-left of the content area
+      const doc = contents.document;
+      const range = doc.createRange();
+      range.selectNodeContents(doc.body);
+      // Get all text and find the position by using the visible range
+      const visibleText = doc.body.innerText ?? doc.body.textContent ?? "";
+      // Take first 150 characters, trim whitespace
+      return visibleText.replace(/\s+/g, " ").trim().slice(0, 150);
+    } catch { return ""; }
+  }, []);
 
   const saveProgress = useCallback(
-    (cfi: string, progress: number) => {
+    (cfi: string, progress: number, page: number) => {
       lastSyncedPositionRef.current = cfi;
+      const excerpt = getExcerpt();
       saveMutation.mutate({
         bookId,
         position: cfi,
         progress,
+        currentPage: page,
+        totalPages,
+        excerpt: excerpt || undefined,
         source: "web",
       });
     },
-    [bookId, saveMutation],
+    [bookId, totalPages, saveMutation, getExcerpt],
   );
 
   useEffect(() => {
@@ -361,39 +394,42 @@ body { word-spacing: 1px !important; letter-spacing: 0px !important; text-align:
       initDoneRef.current = true;
 
       if (!displayed) {
-        // Fallback to percentage-based navigation (requires locations)
-        const syncPercent =
-          bookData.currentPage && bookData.totalPages && bookData.totalPages > 0
-            ? bookData.currentPage / bookData.totalPages
-            : bookData.progress;
-
-        if (syncPercent > 0) {
-          // Only generate locations when we actually need the percentage fallback
-          await book.locations.generate(1024);
-          const targetCfi = book.locations.cfiFromPercentage(syncPercent);
-          await rendition.display(targetCfi);
-        } else {
-          await rendition.display();
-        }
+        await rendition.display();
       }
 
-      // Skip saving the initial relocated event — it reports page-start CFI
-      // which is less precise than the Kindle xpointer we navigated to
-      rendition.on("relocated", (location: { start: { cfi: string; percentage: number } }) => {
-        setCurrentProgress(location.start.percentage);
-        if (!hasUserNavigatedRef.current) {
-          hasUserNavigatedRef.current = true;
-          return;
-        }
+      // Track page changes only from explicit user navigation
+      const goNext = () => {
+        setCurrentPage(prev => Math.min(prev + 1, totalPages));
+        void rendition.next();
+        scheduleSave();
+      };
+      const goPrev = () => {
+        setCurrentPage(prev => Math.max(1, prev - 1));
+        void rendition.prev();
+        scheduleSave();
+      };
+      const scheduleSave = () => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(() => {
-          saveProgress(location.start.cfi, location.start.percentage);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cfi = (rendition as any).currentLocation()?.start?.cfi;
+          if (!cfi) return;
+          setCurrentPage(page => {
+            const progress = totalPages > 0 ? page / totalPages : 0;
+            saveProgress(cfi, progress, page);
+            return page;
+          });
         }, 2000);
-      });
+      };
+
+      // Store navigation functions for button clicks
+      renditionRef.current = rendition;
+      goNextRef.current = goNext;
+      goPrevRef.current = goPrev;
 
       const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "ArrowRight") void rendition.next();
-        if (e.key === "ArrowLeft") void rendition.prev();
+        if (e.key === "ArrowRight") goNext();
+        if (e.key === "ArrowLeft") goPrev();
       };
       document.addEventListener("keydown", handleKeyDown);
 
@@ -426,11 +462,15 @@ body { word-spacing: 1px !important; letter-spacing: 0px !important; text-align:
       },
     });
     renditionRef.current.resize(viewerWidth, viewerHeight);
+    // Re-display current position after resize so text reflows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cfi = (renditionRef.current as any).currentLocation()?.start?.cfi;
+    if (cfi) void renditionRef.current.display(cfi);
   }, [fontSize, lineHeight, viewerWidth, viewerHeight, kindleSettings?.font_face]);
 
   if (!bookData?.epubUrl) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
+      <div className="flex h-screen items-center justify-center bg-linear-to-b from-[#2e026d] to-[#15162c] text-white">
         <div className="text-center">
           <p className="mb-4 text-white/60">No EPUB uploaded for this book.</p>
           <Link href="/" className="text-[hsl(280,100%,70%)] hover:underline">
@@ -459,7 +499,7 @@ body { word-spacing: 1px !important; letter-spacing: 0px !important; text-align:
           </button>
         </div>
         <span className="text-xs text-gray-400">
-          {Math.round(currentProgress * 100)}%
+          {totalPages > 0 && `${currentPage}/${totalPages} · `}{(currentProgress * 100).toFixed(1)}%
         </span>
       </header>
       {showSettings && (
@@ -478,6 +518,26 @@ body { word-spacing: 1px !important; letter-spacing: 0px !important; text-align:
             className="flex-1"
           />
           <span className="w-12 text-center text-xs font-mono text-gray-600">{fontSize}px</span>
+          <span className="ml-4 text-xs text-gray-500">Width:</span>
+          <button
+            onClick={() => { const v = widthAdjust - 1; setWidthAdjust(v); localStorage.setItem("reader-width-adjust", String(v)); }}
+            className="rounded border px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-200"
+          >-</button>
+          <span className="w-10 text-center text-xs font-mono text-gray-600">{widthAdjust}px</span>
+          <button
+            onClick={() => { const v = widthAdjust + 1; setWidthAdjust(v); localStorage.setItem("reader-width-adjust", String(v)); }}
+            className="rounded border px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-200"
+          >+</button>
+          <span className="ml-4 text-xs text-gray-500">Height:</span>
+          <button
+            onClick={() => { const v = heightAdjust - 1; setHeightAdjust(v); localStorage.setItem("reader-height-adjust", String(v)); }}
+            className="rounded border px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-200"
+          >-</button>
+          <span className="w-10 text-center text-xs font-mono text-gray-600">{heightAdjust}px</span>
+          <button
+            onClick={() => { const v = heightAdjust + 1; setHeightAdjust(v); localStorage.setItem("reader-height-adjust", String(v)); }}
+            className="rounded border px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-200"
+          >+</button>
         </div>
       )}
       <div className="flex flex-1 items-center justify-center overflow-hidden bg-gray-50">
@@ -485,13 +545,13 @@ body { word-spacing: 1px !important; letter-spacing: 0px !important; text-align:
       </div>
       <footer className="flex justify-between border-t px-4 py-2">
         <button
-          onClick={() => void renditionRef.current?.prev()}
+          onClick={() => goPrevRef.current?.()}
           className="rounded px-4 py-1 text-sm hover:bg-gray-100"
         >
           Previous
         </button>
         <button
-          onClick={() => void renditionRef.current?.next()}
+          onClick={() => goNextRef.current?.()}
           className="rounded px-4 py-1 text-sm hover:bg-gray-100"
         >
           Next

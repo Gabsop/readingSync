@@ -238,6 +238,24 @@ function ReadingSync:syncProgressSilent()
         line_height = cfg.line_spacing
     end
 
+    -- Capture text excerpt at current position for cross-device sync
+    local excerpt = nil
+    pcall(function()
+        if xpointer then
+            local text = doc:getTextFromXPointer(xpointer, 150)
+            if text and text ~= "" then excerpt = text end
+        end
+    end)
+    if not excerpt then
+        pcall(function()
+            if xpointer then
+                local text = doc:getTextFromXPointers(xpointer, nil, 150)
+                if text and text ~= "" then excerpt = text end
+            end
+        end)
+    end
+    log("excerpt: " .. tostring(excerpt))
+
     local data = {
         book_id = book_id,
         book_title = book_title,
@@ -247,6 +265,7 @@ function ReadingSync:syncProgressSilent()
         progress = percent,
         updated_at = os.time(),
         source = "kindle",
+        excerpt = excerpt,
         render_settings = {
             font_size = font_size,
             line_height = line_height,
@@ -378,6 +397,24 @@ function ReadingSync:syncProgress()
         line_height = cfg.line_spacing
     end
 
+    -- Capture text excerpt at current position for cross-device sync
+    local excerpt = nil
+    pcall(function()
+        if xpointer then
+            local text = doc:getTextFromXPointer(xpointer, 150)
+            if text and text ~= "" then excerpt = text end
+        end
+    end)
+    if not excerpt then
+        pcall(function()
+            if xpointer then
+                local text = doc:getTextFromXPointers(xpointer, nil, 150)
+                if text and text ~= "" then excerpt = text end
+            end
+        end)
+    end
+    log("excerpt: " .. tostring(excerpt))
+
     local data = {
         book_id = book_id,
         book_title = book_title,
@@ -387,6 +424,7 @@ function ReadingSync:syncProgress()
         progress = percent,
         updated_at = os.time(),
         source = "kindle",
+        excerpt = excerpt,
         render_settings = {
             font_size = font_size,
             line_height = line_height,
@@ -448,26 +486,62 @@ function ReadingSync:syncFromWeb()
         return
     end
 
-    local remote_page = remote.current_page or math.floor(remote.progress * (doc:getPageCount() or 0))
-    local total = remote.total_pages or doc:getPageCount() or 0
+    if not remote.progress or remote.progress == 0 then
+        UIManager:show(InfoMessage:new{
+            text = "Web reader progress is 0% — cannot sync",
+            timeout = 3,
+        })
+        return
+    end
+
+    local total_pages = doc:getPageCount() or 0
+    local remote_page = remote.current_page or math.floor(remote.progress * total_pages)
     local remote_pct = math.floor(remote.progress * 100)
+
+    local excerpt_preview = ""
+    if remote.excerpt and remote.excerpt ~= "" then
+        excerpt_preview = "\n\n\"" .. remote.excerpt:sub(1, 80) .. "...\""
+    end
 
     UIManager:show(ConfirmBox:new{
         text = "In the web reader you stopped at page " .. tostring(remote_page)
-            .. "/" .. tostring(total) .. " (" .. remote_pct .. "%).\n\n"
+            .. "/" .. tostring(total_pages) .. " (" .. remote_pct .. "%)."
+            .. excerpt_preview .. "\n\n"
             .. "Do you want to sync to that position?",
         ok_text = "Yes, sync",
         cancel_text = "No",
         ok_callback = function()
-            log("Sync from web: navigating to " .. tostring(remote.progress))
-            local target_page = math.floor(remote.progress * doc:getPageCount())
-            pcall(function()
-                self.ui:handleEvent(
-                    require("ui/event"):new("GotoPage", target_page)
-                )
-            end)
+            -- Try to find the excerpt in the book for exact positioning
+            local navigated = false
+            if remote.excerpt and remote.excerpt ~= "" then
+                pcall(function()
+                    -- Search for the excerpt text in the document
+                    local search_text = remote.excerpt:sub(1, 80)
+                    log("Sync from web: searching for excerpt: " .. search_text)
+
+                    -- Use KOReader's text search to find the position
+                    local xp = doc:findText(search_text, 0, 0, true, false)
+                    if xp then
+                        log("Sync from web: found excerpt at xpointer")
+                        doc:gotoXPointer(xp)
+                        navigated = true
+                    end
+                end)
+            end
+
+            if not navigated then
+                -- Fallback to page-based navigation
+                local target_page = remote.current_page or math.floor(remote.progress * total_pages)
+                log("Sync from web: excerpt not found, using page " .. tostring(target_page))
+                pcall(function()
+                    self.ui:handleEvent(
+                        require("ui/event"):new("GotoPage", target_page)
+                    )
+                end)
+            end
+
             UIManager:show(InfoMessage:new{
-                text = "Synced to page " .. tostring(target_page),
+                text = "Synced to web reader position",
                 timeout = 2,
             })
         end,

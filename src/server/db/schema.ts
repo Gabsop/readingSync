@@ -20,6 +20,7 @@ export const readingProgress = createTable(
     progress: d.real().notNull(),
     epubUrl: d.varchar({ length: 1024 }),
     renderSettings: d.text(),
+    excerpt: d.varchar({ length: 512 }),
     source: d.varchar({ length: 32 }),
     updatedAt: d
       .timestamp({ withTimezone: true })
@@ -38,6 +39,7 @@ export const syncHistory = createTable(
     currentPage: d.integer(),
     totalPages: d.integer(),
     progress: d.real().notNull(),
+    excerpt: d.varchar({ length: 512 }),
     source: d.varchar({ length: 32 }).notNull(),
     createdAt: d
       .timestamp({ withTimezone: true })

@@ -47,6 +47,9 @@ const FOOTER_HEIGHT = 36;
 const CONTENT_PADDING_H = 24;
 const CONTENT_PADDING_V = 16;
 
+// Debounce delay for saving progress to SQLite (ms)
+const PROGRESS_SAVE_DEBOUNCE = 1000;
+
 export default function ReaderScreen() {
   const { bookId } = useLocalSearchParams<{ bookId: string }>();
   const router = useRouter();
@@ -62,6 +65,15 @@ export default function ReaderScreen() {
   const [bookTitle, setBookTitle] = useState(bookId ?? "");
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+
+  // The text book_id used for reading_positions (vs the integer id from route params)
+  const textBookIdRef = useRef<string | null>(null);
+  // Whether we've restored the saved position (only on first load)
+  const restoredPositionRef = useRef(false);
+  // Saved position to restore after chapter loads
+  const pendingRestorePageRef = useRef<number | null>(null);
+  // Debounce timer for saving progress
+  const saveProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reader settings
   const {
@@ -110,8 +122,8 @@ export default function ReaderScreen() {
       setLoading(true);
       setError(null);
 
-      const row = await db.getFirstAsync<{ epub_path: string; title: string }>(
-        "SELECT epub_path, title FROM books WHERE id = ?",
+      const row = await db.getFirstAsync<{ epub_path: string; title: string; book_id: string }>(
+        "SELECT epub_path, title, book_id FROM books WHERE id = ?",
         [bookId!],
       );
 
@@ -121,24 +133,57 @@ export default function ReaderScreen() {
         return;
       }
 
+      textBookIdRef.current = row.book_id;
       setBookTitle(row.title || bookId!);
       const epub = await parseEpub(row.epub_path);
       epubRef.current = epub;
       setTotalChapters(epub.spine.length);
 
-      // Render first chapter
-      const xhtml = await readChapter(epub, 0);
-      resetKeyCounter();
-      const rendered = renderXhtml(xhtml, {
-        baseFontSize: settings.fontSize,
-        fontFamily: computedFontFamily,
-        lineHeight: computedLineHeight,
-        textColor: theme.textColor,
-        linkColor: theme.linkColor,
-        textAlign: settings.textAlign,
-        resolveAsset: (href) => undefined,
-      });
-      setChapterContent(rendered);
+      // Check for saved reading position
+      let startChapter = 0;
+      let startPage = 0;
+
+      if (!restoredPositionRef.current) {
+        const saved = await db.getFirstAsync<{ position: string }>(
+          "SELECT position FROM reading_positions WHERE book_id = ?",
+          [row.book_id],
+        );
+        if (saved?.position) {
+          try {
+            const pos = JSON.parse(saved.position);
+            if (typeof pos.chapter === "number" && pos.chapter < epub.spine.length) {
+              startChapter = pos.chapter;
+              startPage = typeof pos.page === "number" ? pos.page : 0;
+            }
+          } catch {
+            // Invalid position JSON — start from beginning
+          }
+        }
+        restoredPositionRef.current = true;
+      }
+
+      // If restoring to a non-zero page, stash it for after content measurement
+      if (startPage > 0) {
+        pendingRestorePageRef.current = startPage;
+      }
+
+      if (startChapter > 0) {
+        setCurrentChapter(startChapter);
+      } else {
+        // Render first chapter directly
+        const xhtml = await readChapter(epub, 0);
+        resetKeyCounter();
+        const rendered = renderXhtml(xhtml, {
+          baseFontSize: settings.fontSize,
+          fontFamily: computedFontFamily,
+          lineHeight: computedLineHeight,
+          textColor: theme.textColor,
+          linkColor: theme.linkColor,
+          textAlign: settings.textAlign,
+          resolveAsset: (href) => undefined,
+        });
+        setChapterContent(rendered);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load book");
     } finally {
@@ -189,10 +234,21 @@ export default function ReaderScreen() {
       if (contentHeight <= 0 || pageHeight <= 0) return;
       const pages = Math.max(1, Math.ceil(contentHeight / pageHeight));
       setTotalPages(pages);
-      setCurrentPage(0);
 
       // Update chapter page counts for global page tracking
       chapterPageCountsRef.current.set(currentChapter, pages);
+
+      // Restore saved page position if pending
+      const pendingPage = pendingRestorePageRef.current;
+      if (pendingPage !== null && pendingPage > 0 && pendingPage < pages) {
+        pendingRestorePageRef.current = null;
+        setCurrentPage(pendingPage);
+        scrollRef.current?.scrollTo({ y: pendingPage * pageHeight, animated: false });
+      } else {
+        pendingRestorePageRef.current = null;
+        setCurrentPage(0);
+      }
+
       recalcGlobalPages();
     },
     [pageHeight, currentChapter],
@@ -215,6 +271,67 @@ export default function ReaderScreen() {
   useEffect(() => {
     recalcGlobalPages();
   }, [currentPage, currentChapter, totalPages]);
+
+  // --- Progress persistence ---
+
+  /** Save current reading position to SQLite (debounced). */
+  function scheduleSaveProgress(chapter: number, page: number) {
+    if (saveProgressTimerRef.current) {
+      clearTimeout(saveProgressTimerRef.current);
+    }
+    saveProgressTimerRef.current = setTimeout(() => {
+      saveProgressToDb(chapter, page);
+    }, PROGRESS_SAVE_DEBOUNCE);
+  }
+
+  async function saveProgressToDb(chapter: number, page: number) {
+    const bid = textBookIdRef.current;
+    if (!bid) return;
+
+    const counts = chapterPageCountsRef.current;
+    let pagesBefore = 0;
+    let total = 0;
+    for (let i = 0; i < totalChapters; i++) {
+      const cp = counts.get(i) ?? 1;
+      if (i < chapter) pagesBefore += cp;
+      total += cp;
+    }
+    const gPage = pagesBefore + page + 1;
+    const progress = total > 0 ? gPage / total : 0;
+
+    // Position stored as JSON: { chapter, page }
+    const position = JSON.stringify({ chapter, page });
+
+    await db.runAsync(
+      `INSERT INTO reading_positions (book_id, position, current_page, total_pages, progress, source, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'mobile', datetime('now'))
+       ON CONFLICT(book_id) DO UPDATE SET
+         position = excluded.position,
+         current_page = excluded.current_page,
+         total_pages = excluded.total_pages,
+         progress = excluded.progress,
+         updated_at = datetime('now')`,
+      [bid, position, gPage, total, progress],
+    );
+  }
+
+  // Save progress on every page/chapter change
+  useEffect(() => {
+    if (!textBookIdRef.current || totalChapters === 0) return;
+    scheduleSaveProgress(currentChapter, currentPage);
+  }, [currentPage, currentChapter]);
+
+  // Save progress immediately on unmount
+  useEffect(() => {
+    return () => {
+      if (saveProgressTimerRef.current) {
+        clearTimeout(saveProgressTimerRef.current);
+      }
+      if (textBookIdRef.current && totalChapters > 0) {
+        saveProgressToDb(currentChapter, currentPage);
+      }
+    };
+  }, [currentChapter, currentPage, totalChapters]);
 
   const handleScroll = useCallback(
     (e: { nativeEvent: { contentOffset: { y: number } } }) => {

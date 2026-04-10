@@ -92,7 +92,41 @@
   - Database accessible via `useSQLiteContext()` hook from all screens
 
 ## M2 — Reading Experience
-Not started.
+
+### Completed
+- [x] Pagination engine with accurate text measurement
+  - Paginated ScrollView with `snapToInterval` based on available screen height
+  - Content height measured via `onContentSizeChange`, page count = ceil(contentHeight / pageHeight)
+  - Tap-zone navigation: left 40% = previous page, right 40% = next page (Apple Books pattern)
+  - Center 20% reserved for controls overlay toggle (future task)
+  - Automatic chapter transitions: last page → next chapter, first page back → previous chapter
+  - Global page numbering across chapters (e.g., "15 of 561")
+  - Chapter page counts cached in ref for cross-chapter page calculation
+  - EPUB parsed once and cached in ref (avoids re-parsing on chapter change)
+  - `ParsedEpub` type exported from epub-parser for use in reader screen
+  - `PaginatedChapter` reusable component created (`mobile/lib/paginated-view.tsx`)
+  - Page indicator in footer (replaces old chapter-level prev/next buttons)
+  - TypeScript passes cleanly
+
+### Completed (continued)
+- [x] Page turn gestures + slide animation
+  - Horizontal pan gesture via `react-native-gesture-handler` Gesture.Pan()
+  - Finger-tracked slide animation using `react-native-reanimated` shared values
+  - Swipe triggers at 25% of screen width or 500px/s velocity (fast flick)
+  - Slide-out animation (250ms, cubic ease-out) before page change
+  - Spring snap-back on cancelled swipe (damping 20, stiffness 300)
+  - Subtle shadow overlay grows with swipe distance for depth effect
+  - Tap zones preserved: left 40% = prev, right 40% = next, center 20% = controls (future)
+  - Gesture composition: `Gesture.Race(pan, tap)` — pan wins if horizontal, tap wins otherwise
+  - Pan activates after 15px horizontal movement, cancels on >10px vertical (no scroll conflict)
+  - Light haptic feedback (`expo-haptics` ImpactFeedbackStyle.Light) on every page turn
+  - Animation lock prevents double-triggers during slide-out
+  - TypeScript passes cleanly
+
+### Not Started
+- [ ] Reader settings panel (font, size, theme)
+- [ ] Controls overlay (top/bottom bars)
+- [ ] Progress tracking (local)
 
 ## M3 — Library & Sync
 Not started.

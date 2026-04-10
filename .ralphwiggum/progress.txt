@@ -22,11 +22,20 @@
 - [ ] API key generation endpoint for KOReader plugin
 
 ### Not Started
-- [ ] EPUB parser: unzip, parse OPF, extract spine order
 - [ ] Basic XHTML -> React Native component mapping
 - [ ] Backend: add `device_id` field, replace NextAuth with better-auth
 
 ### Completed (continued)
+- [x] EPUB parser module (`mobile/lib/epub-parser.ts`)
+  - Reads .epub (zip) via expo-file-system `File.arrayBuffer()` + JSZip
+  - Parses META-INF/container.xml → locates OPF rootfile
+  - Parses OPF → extracts metadata (title, author, cover, language, etc.)
+  - Builds manifest map (id → href, mediaType, properties)
+  - Extracts spine reading order with resolved hrefs from manifest
+  - Parses TOC: EPUB 3 nav document and EPUB 2 NCX fallback
+  - Cover image extraction (EPUB 3 properties, EPUB 2 meta, id heuristic)
+  - `readChapter()` helper for accessing chapter XHTML by spine index
+  - Dependencies added: jszip, fast-xml-parser
 - [x] Local SQLite database schema
   - Tables: books, reading_positions, sync_queue, settings
   - WAL journal mode, foreign keys enabled

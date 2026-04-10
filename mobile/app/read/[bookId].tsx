@@ -21,6 +21,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
+import { Ionicons } from "@expo/vector-icons";
 import { parseEpub, readChapter } from "../../lib/epub-parser";
 import { renderXhtml, resetKeyCounter } from "../../lib/xhtml-renderer";
 import type { ParsedEpub } from "../../lib/epub-parser";
@@ -32,6 +33,7 @@ import {
   getFontFamily,
 } from "../../lib/reader-settings";
 import { ReaderSettingsPanel } from "../../lib/reader-settings-panel";
+import { ControlsOverlay } from "../../lib/controls-overlay";
 
 // Gesture thresholds
 const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
@@ -59,6 +61,7 @@ export default function ReaderScreen() {
   const [totalChapters, setTotalChapters] = useState(0);
   const [bookTitle, setBookTitle] = useState(bookId ?? "");
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(false);
 
   // Reader settings
   const {
@@ -300,17 +303,23 @@ export default function ReaderScreen() {
 
   // --- Gestures ---
 
+  function hideControls() {
+    setControlsVisible(false);
+  }
+
   function handleTapNavigation(locationX: number) {
     const leftZone = screenWidth * 0.4;
     const rightZone = screenWidth * 0.6;
 
     if (locationX < leftZone) {
+      setControlsVisible(false);
       goToPreviousPage();
     } else if (locationX > rightZone) {
+      setControlsVisible(false);
       goToNextPage();
     } else {
-      // Center 20%: toggle settings panel
-      setSettingsVisible((v) => !v);
+      // Center 20%: toggle controls overlay
+      setControlsVisible((v) => !v);
     }
   }
 
@@ -338,8 +347,10 @@ export default function ReaderScreen() {
         e.translationX > swipeThreshold || e.velocityX > SWIPE_VELOCITY_THRESHOLD;
 
       if (swipedLeft) {
+        runOnJS(hideControls)();
         runOnJS(animatePageTurn)("left");
       } else if (swipedRight) {
+        runOnJS(hideControls)();
         runOnJS(animatePageTurn)("right");
       } else {
         runOnJS(snapBack)();
@@ -416,7 +427,43 @@ export default function ReaderScreen() {
             ? `${globalPage} of ${globalTotalPages}`
             : "—"}
         </Text>
+        <Pressable
+          onPress={() => {
+            // TODO: open table of contents (M4)
+          }}
+          hitSlop={8}
+        >
+          <Ionicons name="list" size={20} color={theme.secondaryTextColor} />
+        </Pressable>
       </View>
+
+      {/* Controls overlay — appears on center tap */}
+      <ControlsOverlay
+        visible={controlsVisible}
+        theme={theme}
+        pagesLeftInChapter={Math.max(0, totalPages - currentPage - 1)}
+        progressPercent={
+          globalTotalPages > 0
+            ? Math.round((globalPage / globalTotalPages) * 100)
+            : 0
+        }
+        onOpenSettings={() => {
+          setControlsVisible(false);
+          setSettingsVisible(true);
+        }}
+        onOpenContents={() => {
+          // TODO: implement table of contents (M4)
+        }}
+        onOpenSearch={() => {
+          // TODO: implement search (M4)
+        }}
+        onBookmark={() => {
+          // TODO: implement bookmarks (stretch)
+        }}
+        onShare={() => {
+          // TODO: implement share (stretch)
+        }}
+      />
 
       {/* Settings panel */}
       <ReaderSettingsPanel

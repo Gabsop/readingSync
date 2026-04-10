@@ -192,6 +192,21 @@
   - Uses expo-file-system v19 new API (Paths, File, Directory classes)
   - TypeScript passes cleanly, Expo build succeeds
 
+### Completed (continued)
+- [x] Book import from document picker
+  - New `book-import.ts` module (`mobile/lib/book-import.ts`) with full import pipeline
+  - `importFromDocumentPicker()`: opens iOS/Android document picker filtered to `.epub` files
+  - Copies selected EPUB to persistent `Documents/books/` directory
+  - Parses EPUB metadata (title, author) via existing epub-parser
+  - Extracts and caches cover image to `Documents/covers/`
+  - Inserts book record into SQLite `books` table with UPSERT guard (prevents duplicates)
+  - Background upload to backend R2 via presigned URL flow (POST → PUT → finalize)
+  - ExpoFile used as Blob body for upload (memory-efficient, no full file buffering)
+  - "+" button added to Library tab header (top-right, iOS convention)
+  - "Import from Files" CTA button in empty library state with icon
+  - Dependency: `expo-document-picker` installed
+  - TypeScript passes cleanly
+
 ### Not Started
 
 ## M4 — Polish & Ship

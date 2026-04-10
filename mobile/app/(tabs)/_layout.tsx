@@ -1,5 +1,21 @@
 import { Tabs } from "expo-router";
+import { Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSQLiteContext } from "expo-sqlite";
+import { importFromDocumentPicker } from "../../lib/book-import";
+
+function ImportButton() {
+  const db = useSQLiteContext();
+  return (
+    <Pressable
+      onPress={() => importFromDocumentPicker(db)}
+      hitSlop={8}
+      style={{ marginRight: 8 }}
+    >
+      <Ionicons name="add" size={28} color="#007AFF" />
+    </Pressable>
+  );
+}
 
 export default function TabsLayout() {
   return (
@@ -21,6 +37,7 @@ export default function TabsLayout() {
         name="library"
         options={{
           title: "Library",
+          headerRight: () => <ImportButton />,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="library" size={size} color={color} />
           ),

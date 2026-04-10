@@ -19,6 +19,7 @@ import {
   Directory,
 } from "expo-file-system";
 import { parseEpub, extractCoverImage } from "../../lib/epub-parser";
+import { importFromDocumentPicker } from "../../lib/book-import";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -275,6 +276,16 @@ export default function LibraryScreen() {
               <Text style={styles.emptySubtitle}>
                 Import an EPUB to start reading
               </Text>
+              <Pressable
+                style={styles.importButton}
+                onPress={async () => {
+                  const id = await importFromDocumentPicker(db);
+                  if (id) loadBooks();
+                }}
+              >
+                <Ionicons name="add-circle" size={20} color="#fff" />
+                <Text style={styles.importButtonText}>Import from Files</Text>
+              </Pressable>
             </View>
           }
         />
@@ -409,5 +420,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#8E8E93",
     textAlign: "center",
+  },
+  importButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#007AFF",
+    borderRadius: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginTop: 20,
+  },
+  importButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });

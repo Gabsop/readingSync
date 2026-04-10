@@ -1,0 +1,44 @@
+# ReadingSync Mobile App — Progress
+
+## M1 — Foundation
+
+### Completed
+- [x] Project scaffolding (Expo SDK 54 + TypeScript) — `mobile/` directory
+  - Expo blank-typescript template
+  - expo-router for file-based navigation
+  - Core dependencies: zustand, expo-sqlite, expo-file-system, expo-secure-store,
+    react-native-reanimated, react-native-gesture-handler, expo-auth-session,
+    expo-haptics, expo-blur, expo-brightness, @react-navigation/*
+  - TypeScript strict mode, passes type check
+- [x] Navigation structure (Login -> Library -> Reader)
+  - Root layout with Stack navigator (expo-router)
+  - Tab layout: Reading Now, Library, Search (with Ionicons)
+  - Login screen with Google sign-in placeholder
+  - Reader screen with dynamic [bookId] route
+  - Placeholder screens for all tabs with empty states
+
+### In Progress
+- [ ] better-auth setup: Google OAuth on backend, login screen in app
+- [ ] API key generation endpoint for KOReader plugin
+
+### Not Started
+- [ ] EPUB parser: unzip, parse OPF, extract spine order
+- [ ] Basic XHTML -> React Native component mapping
+- [ ] Backend: add `device_id` field, replace NextAuth with better-auth
+
+### Completed (continued)
+- [x] Local SQLite database schema
+  - Tables: books, reading_positions, sync_queue, settings
+  - WAL journal mode, foreign keys enabled
+  - Schema versioning via PRAGMA user_version for future migrations
+  - SQLiteProvider wired into root layout with Suspense
+  - Database accessible via `useSQLiteContext()` hook from all screens
+
+## M2 — Reading Experience
+Not started.
+
+## M3 — Library & Sync
+Not started.
+
+## M4 — Polish & Ship
+Not started.

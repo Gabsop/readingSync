@@ -123,8 +123,25 @@
   - Animation lock prevents double-triggers during slide-out
   - TypeScript passes cleanly
 
+### Completed (continued 2)
+- [x] Reader settings panel (font, size, theme)
+  - Settings store (`mobile/lib/reader-settings.ts`): types, theme definitions, defaults, SQLite persistence
+  - 6 Apple Books themes: Original, Quiet, Paper, Bold, Calm, Focus — each with background, text, secondary, link colors
+  - Font size controls: increase/decrease with 12–30pt range, 1pt step
+  - 7 font family options: System, Georgia, Palatino, New York, Athelas, Charter, Iowan Old Style
+  - Line spacing: Compact (1.3x), Normal (1.6x), Loose (2.0x)
+  - Margins: Narrow (16px), Normal (24px), Wide (36px)
+  - Text alignment: Left or Justified
+  - Settings panel UI (`mobile/lib/reader-settings-panel.tsx`): half-sheet modal with theme grid, font size row, customize section
+  - Panel adapts to dark themes (Bold/Focus get dark panel styling)
+  - `useReaderSettings()` hook: loads from SQLite on mount, persists every change
+  - XHTML renderer updated: accepts fontFamily, lineHeight, textColor, linkColor, textAlign
+  - Reader screen applies theme colors to header, footer, and background
+  - Center tap zone (20%) toggles settings panel
+  - Chapter re-renders on settings change (font, theme, spacing, margins, alignment)
+  - TypeScript passes cleanly
+
 ### Not Started
-- [ ] Reader settings panel (font, size, theme)
 - [ ] Controls overlay (top/bottom bars)
 - [ ] Progress tracking (local)
 

@@ -24,6 +24,14 @@ import * as Haptics from "expo-haptics";
 import { parseEpub, readChapter } from "../../lib/epub-parser";
 import { renderXhtml, resetKeyCounter } from "../../lib/xhtml-renderer";
 import type { ParsedEpub } from "../../lib/epub-parser";
+import {
+  useReaderSettings,
+  getTheme,
+  getLineHeight,
+  getHorizontalMargin,
+  getFontFamily,
+} from "../../lib/reader-settings";
+import { ReaderSettingsPanel } from "../../lib/reader-settings-panel";
 
 // Gesture thresholds
 const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
@@ -50,6 +58,23 @@ export default function ReaderScreen() {
   const [currentChapter, setCurrentChapter] = useState(0);
   const [totalChapters, setTotalChapters] = useState(0);
   const [bookTitle, setBookTitle] = useState(bookId ?? "");
+  const [settingsVisible, setSettingsVisible] = useState(false);
+
+  // Reader settings
+  const {
+    settings,
+    loaded: settingsLoaded,
+    update: updateSettings,
+    increaseFontSize,
+    decreaseFontSize,
+    canIncrease,
+    canDecrease,
+  } = useReaderSettings(db);
+
+  const theme = getTheme(settings.theme);
+  const computedLineHeight = getLineHeight(settings.lineSpacing, settings.fontSize);
+  const computedMargin = getHorizontalMargin(settings.margins);
+  const computedFontFamily = getFontFamily(settings.fontFamily);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(0);
@@ -67,14 +92,15 @@ export default function ReaderScreen() {
   const chapterPageCountsRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
-    if (!bookId) return;
+    if (!bookId || !settingsLoaded) return;
     loadBook();
-  }, [bookId]);
+  }, [bookId, settingsLoaded]);
 
+  // Re-render chapter when settings change (after initial load)
   useEffect(() => {
-    if (!bookId || totalChapters === 0) return;
+    if (!bookId || totalChapters === 0 || !settingsLoaded) return;
     loadChapter(currentChapter);
-  }, [currentChapter, totalChapters]);
+  }, [currentChapter, totalChapters, settings.fontSize, settings.fontFamily, settings.theme, settings.lineSpacing, settings.margins, settings.textAlign]);
 
   async function loadBook() {
     try {
@@ -101,7 +127,12 @@ export default function ReaderScreen() {
       const xhtml = await readChapter(epub, 0);
       resetKeyCounter();
       const rendered = renderXhtml(xhtml, {
-        baseFontSize: 17,
+        baseFontSize: settings.fontSize,
+        fontFamily: computedFontFamily,
+        lineHeight: computedLineHeight,
+        textColor: theme.textColor,
+        linkColor: theme.linkColor,
+        textAlign: settings.textAlign,
         resolveAsset: (href) => undefined,
       });
       setChapterContent(rendered);
@@ -130,7 +161,12 @@ export default function ReaderScreen() {
       const xhtml = await readChapter(epub, spineIndex);
       resetKeyCounter();
       const rendered = renderXhtml(xhtml, {
-        baseFontSize: 17,
+        baseFontSize: settings.fontSize,
+        fontFamily: computedFontFamily,
+        lineHeight: computedLineHeight,
+        textColor: theme.textColor,
+        linkColor: theme.linkColor,
+        textAlign: settings.textAlign,
       });
       setChapterContent(rendered);
       setCurrentPage(0);
@@ -272,8 +308,10 @@ export default function ReaderScreen() {
       goToPreviousPage();
     } else if (locationX > rightZone) {
       goToNextPage();
+    } else {
+      // Center 20%: toggle settings panel
+      setSettingsVisible((v) => !v);
     }
-    // Center 20%: toggle controls (will be implemented in controls overlay task)
   }
 
   const tapGesture = Gesture.Tap()
@@ -320,15 +358,15 @@ export default function ReaderScreen() {
   }));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
       {/* Header */}
       <View style={[styles.header, { height: HEADER_HEIGHT }]}>
         <View style={styles.headerSpacer} />
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, { color: theme.secondaryTextColor }]} numberOfLines={1}>
           {bookTitle}
         </Text>
         <Pressable onPress={() => router.back()} style={styles.closeButtonContainer}>
-          <Text style={styles.closeButton}>✕</Text>
+          <Text style={[styles.closeButton, { color: theme.secondaryTextColor }]}>✕</Text>
         </Pressable>
       </View>
 
@@ -358,7 +396,10 @@ export default function ReaderScreen() {
                 scrollEventThrottle={16}
                 decelerationRate="fast"
                 snapToInterval={pageHeight}
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingHorizontal: computedMargin },
+                ]}
                 pointerEvents="none"
               >
                 {chapterContent}
@@ -370,12 +411,24 @@ export default function ReaderScreen() {
 
       {/* Footer */}
       <View style={[styles.footer, { height: FOOTER_HEIGHT }]}>
-        <Text style={styles.pageIndicator}>
+        <Text style={[styles.pageIndicator, { color: theme.secondaryTextColor }]}>
           {globalTotalPages > 1
             ? `${globalPage} of ${globalTotalPages}`
             : "—"}
         </Text>
       </View>
+
+      {/* Settings panel */}
+      <ReaderSettingsPanel
+        visible={settingsVisible}
+        settings={settings}
+        canIncrease={canIncrease}
+        canDecrease={canDecrease}
+        onUpdate={updateSettings}
+        onIncreaseFontSize={increaseFontSize}
+        onDecreaseFontSize={decreaseFontSize}
+        onClose={() => setSettingsVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -383,7 +436,6 @@ export default function ReaderScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   header: {
     flexDirection: "row",
@@ -396,7 +448,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 13,
-    color: "#8E8E93",
     flex: 1,
     textAlign: "center",
   },
@@ -406,7 +457,6 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     fontSize: 18,
-    color: "#8E8E93",
   },
   centered: {
     flex: 1,
@@ -444,6 +494,5 @@ const styles = StyleSheet.create({
   },
   pageIndicator: {
     fontSize: 12,
-    color: "#8E8E93",
   },
 });

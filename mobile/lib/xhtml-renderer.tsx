@@ -35,6 +35,16 @@ interface RendererOptions {
   resolveAsset?: (href: string) => string | undefined;
   /** Base font size in points (default: 17) */
   baseFontSize?: number;
+  /** Font family name (undefined = system default) */
+  fontFamily?: string;
+  /** Computed line height in points */
+  lineHeight?: number;
+  /** Text color from theme */
+  textColor?: string;
+  /** Link color from theme */
+  linkColor?: string;
+  /** Text alignment: "left" | "justify" */
+  textAlign?: "left" | "justify";
 }
 
 // ---------------------------------------------------------------------------
@@ -132,13 +142,23 @@ function renderElement(
 ): React.ReactNode {
   const key = nextKey();
   const baseFontSize = options.baseFontSize ?? 17;
+  const textColor = options.textColor ?? "#1C1C1E";
+  const linkColor = options.linkColor ?? "#007AFF";
+  const lineHeight = options.lineHeight ?? Math.round(baseFontSize * 1.6);
+  const fontFamily = options.fontFamily;
+  const textAlign = options.textAlign ?? "justify";
+
+  const baseTextStyle: TextStyle = {
+    color: textColor,
+    ...(fontFamily ? { fontFamily } : {}),
+  };
 
   switch (tag.toLowerCase()) {
     // --- Block elements ---
     case "p": {
       const inlineStyle = parseInlineStyle(attrs.style);
       return (
-        <Text key={key} style={[baseStyles.paragraph, { fontSize: baseFontSize }, inlineStyle]}>
+        <Text key={key} style={[baseStyles.paragraph, baseTextStyle, { fontSize: baseFontSize, lineHeight, textAlign }, inlineStyle]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
@@ -146,37 +166,37 @@ function renderElement(
 
     case "h1":
       return (
-        <Text key={key} style={[baseStyles.heading, { fontSize: baseFontSize * 1.8 }]}>
+        <Text key={key} style={[baseStyles.heading, baseTextStyle, { fontSize: baseFontSize * 1.8 }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
     case "h2":
       return (
-        <Text key={key} style={[baseStyles.heading, { fontSize: baseFontSize * 1.5 }]}>
+        <Text key={key} style={[baseStyles.heading, baseTextStyle, { fontSize: baseFontSize * 1.5 }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
     case "h3":
       return (
-        <Text key={key} style={[baseStyles.heading, { fontSize: baseFontSize * 1.3 }]}>
+        <Text key={key} style={[baseStyles.heading, baseTextStyle, { fontSize: baseFontSize * 1.3 }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
     case "h4":
       return (
-        <Text key={key} style={[baseStyles.heading, { fontSize: baseFontSize * 1.15 }]}>
+        <Text key={key} style={[baseStyles.heading, baseTextStyle, { fontSize: baseFontSize * 1.15 }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
     case "h5":
       return (
-        <Text key={key} style={[baseStyles.heading, { fontSize: baseFontSize * 1.05 }]}>
+        <Text key={key} style={[baseStyles.heading, baseTextStyle, { fontSize: baseFontSize * 1.05 }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
     case "h6":
       return (
-        <Text key={key} style={[baseStyles.heading, { fontSize: baseFontSize }]}>
+        <Text key={key} style={[baseStyles.heading, baseTextStyle, { fontSize: baseFontSize }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
@@ -260,7 +280,7 @@ function renderElement(
     case "a": {
       // Render as styled text (tap handling is a future concern)
       return (
-        <Text key={key} style={baseStyles.link}>
+        <Text key={key} style={[baseStyles.link, { color: linkColor }]}>
           {renderNodes(children, options, depth + 1)}
         </Text>
       );
@@ -391,9 +411,10 @@ function renderListItems(
       if (tag.toLowerCase() === "li") {
         const liChildren = obj[tag] as unknown[];
         const bullet = ordered ? `${index + 1}. ` : "\u2022 ";
+        const bulletColor = options.textColor ?? "#1C1C1E";
         items.push(
           <View key={nextKey()} style={baseStyles.listItem}>
-            <Text style={baseStyles.listBullet}>{bullet}</Text>
+            <Text style={[baseStyles.listBullet, { color: bulletColor }]}>{bullet}</Text>
             <View style={baseStyles.listItemContent}>
               {renderNodes(liChildren, options, depth + 1)}
             </View>

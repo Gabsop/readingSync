@@ -47,7 +47,7 @@ interface EpubMetadata {
   coverImageId?: string;
 }
 
-interface ParsedEpub {
+export interface ParsedEpub {
   metadata: EpubMetadata;
   manifest: Map<string, ManifestItem>;
   spine: SpineItem[];

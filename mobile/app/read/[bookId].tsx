@@ -47,6 +47,7 @@ import {
   cancelPendingFlush,
 } from "../../lib/sync-engine";
 import { SyncConflictPicker } from "../../lib/sync-conflict-picker";
+import { SearchModal } from "../../lib/search-modal";
 
 // Gesture thresholds
 const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
@@ -79,6 +80,7 @@ export default function ReaderScreen() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
 
   // Sync conflict picker state
   const [conflictData, setConflictData] = useState<{
@@ -768,7 +770,8 @@ export default function ReaderScreen() {
           setTocVisible(true);
         }}
         onOpenSearch={() => {
-          // TODO: implement search (M4)
+          setControlsVisible(false);
+          setSearchVisible(true);
         }}
         onBookmark={() => {
           // TODO: implement bookmarks (stretch)
@@ -822,6 +825,29 @@ export default function ReaderScreen() {
         theme={theme}
         onSelectEntry={handleTocSelect}
         onClose={() => setTocVisible(false)}
+      />
+
+      {/* Search */}
+      <SearchModal
+        visible={searchVisible}
+        epub={epubRef.current}
+        theme={theme}
+        onSelectResult={(chapter, chapterProgress) => {
+          userHasNavigatedRef.current = true;
+          const pageCount = chapterPageCountsRef.current.get(chapter) ?? 1;
+          const estimatedPage = Math.max(0, Math.floor(chapterProgress * pageCount));
+          if (chapter === currentChapter) {
+            const scrollY = estimatedPage * pageHeight;
+            scrollRef.current?.scrollTo({ y: scrollY, animated: false });
+            setCurrentPage(estimatedPage);
+          } else {
+            pendingRestorePageRef.current = estimatedPage;
+            setCurrentChapter(chapter);
+          }
+          setSearchVisible(false);
+          setControlsVisible(false);
+        }}
+        onClose={() => setSearchVisible(false)}
       />
     </SafeAreaView>
   );

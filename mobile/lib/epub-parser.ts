@@ -271,6 +271,65 @@ export async function searchExcerpt(
   return results;
 }
 
+export interface BookSearchResult {
+  /** Spine index where the match was found */
+  chapter: number;
+  /** Character offset of the match within the chapter's plain text */
+  charOffset: number;
+  /** Estimated progress within the chapter (0–1) */
+  chapterProgress: number;
+  /** Context snippet around the match (~60 chars before + query + ~60 chars after) */
+  contextBefore: string;
+  matchedText: string;
+  contextAfter: string;
+}
+
+/**
+ * Search all chapters for a keyword/phrase (case-insensitive). Returns all
+ * occurrences with surrounding context snippets for display.
+ *
+ * Results are returned in reading order (spine index, then char offset).
+ */
+export async function searchBook(
+  epub: ParsedEpub,
+  query: string,
+): Promise<BookSearchResult[]> {
+  const normalized = query.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+
+  const lowerQuery = normalized.toLowerCase();
+  const results: BookSearchResult[] = [];
+  const CONTEXT_CHARS = 60;
+
+  for (let i = 0; i < epub.spine.length; i++) {
+    const plainText = await extractPlainText(epub, i);
+    const lowerText = plainText.toLowerCase();
+    let searchFrom = 0;
+
+    while (searchFrom < lowerText.length) {
+      const idx = lowerText.indexOf(lowerQuery, searchFrom);
+      if (idx === -1) break;
+
+      const matchEnd = idx + normalized.length;
+      const contextStart = Math.max(0, idx - CONTEXT_CHARS);
+      const contextEnd = Math.min(plainText.length, matchEnd + CONTEXT_CHARS);
+
+      results.push({
+        chapter: i,
+        charOffset: idx,
+        chapterProgress: plainText.length > 0 ? idx / plainText.length : 0,
+        contextBefore: (contextStart > 0 ? "\u2026" : "") + plainText.slice(contextStart, idx),
+        matchedText: plainText.slice(idx, matchEnd),
+        contextAfter: plainText.slice(matchEnd, contextEnd) + (contextEnd < plainText.length ? "\u2026" : ""),
+      });
+
+      searchFrom = matchEnd;
+    }
+  }
+
+  return results;
+}
+
 /**
  * Extract ~500 characters of text at an approximate position within a chapter.
  * Used when saving progress to include an excerpt for cross-device sync.

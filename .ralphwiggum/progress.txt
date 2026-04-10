@@ -253,7 +253,36 @@
   - Search is async and respects `userHasNavigatedRef` — late results are suppressed if user moved on
   - TypeScript passes cleanly
 
+### Completed (continued 4)
+- [x] Client-side conflict resolution with position picker
+  - New `SyncConflictPicker` component (`mobile/lib/sync-conflict-picker.tsx`): modal overlay
+    with centered card showing two position options (local vs remote)
+  - Each option displays: source icon (phone/book), source label (Mobile/Kindle), progress
+    percentage, and ~80-char excerpt preview in italics
+  - Tappable options with pressed state (blue border highlight)
+  - Reader screen (`mobile/app/read/[bookId].tsx`) now handles `"prompt"` action from
+    `resolveProgressOnOpen()`: loads local excerpt from SQLite, shows picker modal
+  - Picking remote applies the existing 3-tier navigation strategy (JSON position for mobile,
+    excerpt-based text search for Kindle, percentage fallback)
+  - Picking local dismisses the picker and keeps current position
+  - Both choices set `userHasNavigatedRef` to suppress any late-arriving sync results
+  - Refactored remote position application into reusable `applyRemotePosition()` function
+    (shared between auto-apply and user-picked-remote paths)
+  - TypeScript passes cleanly
+
 ### Not Started
 
 ## M4 — Polish & Ship
-Not started.
+
+### Completed
+- [x] Table of contents navigation
+  - New `TocModal` component (`mobile/lib/toc-modal.tsx`): full-screen overlay listing chapters
+  - Flattens nested `TocEntry` tree with indentation for sub-chapters
+  - Current chapter highlighted with accent color and active dot indicator
+  - Tap to jump: maps TOC href to spine index, navigates to chapter, dismisses modal
+  - Theme-aware styling: adapts background, text, and separator colors to reader theme
+  - Wired to both the footer TOC icon and the controls overlay "Contents" button
+  - `TocEntry` type exported from `epub-parser.ts` for reuse
+  - TypeScript passes cleanly
+
+### Not Started

@@ -31,7 +31,7 @@ interface SpineItem {
   mediaType: string;
 }
 
-interface TocEntry {
+export interface TocEntry {
   label: string;
   href: string;
   children: TocEntry[];

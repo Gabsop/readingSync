@@ -29,7 +29,8 @@ import {
   searchExcerpt,
 } from "../../lib/epub-parser";
 import { renderXhtml, resetKeyCounter } from "../../lib/xhtml-renderer";
-import type { ParsedEpub } from "../../lib/epub-parser";
+import type { ParsedEpub, TocEntry } from "../../lib/epub-parser";
+import { TocModal } from "../../lib/toc-modal";
 import {
   useReaderSettings,
   getTheme,
@@ -77,6 +78,7 @@ export default function ReaderScreen() {
   const [bookTitle, setBookTitle] = useState(bookId ?? "");
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [tocVisible, setTocVisible] = useState(false);
 
   // Sync conflict picker state
   const [conflictData, setConflictData] = useState<{
@@ -335,6 +337,25 @@ export default function ReaderScreen() {
   function handlePickLocal() {
     setConflictData(null);
     userHasNavigatedRef.current = true;
+  }
+
+  /** Navigate to a chapter by TOC entry href. */
+  function handleTocSelect(href: string) {
+    const epub = epubRef.current;
+    if (!epub) return;
+
+    const hrefBase = href.split("#")[0];
+    const spineIndex = epub.spine.findIndex(
+      (s) => s.href === hrefBase || s.href.endsWith("/" + hrefBase),
+    );
+
+    if (spineIndex >= 0) {
+      userHasNavigatedRef.current = true;
+      setCurrentChapter(spineIndex);
+    }
+
+    setTocVisible(false);
+    setControlsVisible(false);
   }
 
   async function loadChapter(spineIndex: number) {
@@ -721,9 +742,7 @@ export default function ReaderScreen() {
             : "—"}
         </Text>
         <Pressable
-          onPress={() => {
-            // TODO: open table of contents (M4)
-          }}
+          onPress={() => setTocVisible(true)}
           hitSlop={8}
         >
           <Ionicons name="list" size={20} color={theme.secondaryTextColor} />
@@ -745,7 +764,8 @@ export default function ReaderScreen() {
           setSettingsVisible(true);
         }}
         onOpenContents={() => {
-          // TODO: implement table of contents (M4)
+          setControlsVisible(false);
+          setTocVisible(true);
         }}
         onOpenSearch={() => {
           // TODO: implement search (M4)
@@ -792,6 +812,16 @@ export default function ReaderScreen() {
         }}
         onPickLocal={handlePickLocal}
         onPickRemote={handlePickRemote}
+      />
+
+      {/* Table of Contents */}
+      <TocModal
+        visible={tocVisible}
+        toc={epubRef.current?.toc ?? []}
+        currentChapterHref={epubRef.current?.spine[currentChapter]?.href}
+        theme={theme}
+        onSelectEntry={handleTocSelect}
+        onClose={() => setTocVisible(false)}
       />
     </SafeAreaView>
   );

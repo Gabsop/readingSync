@@ -1,10 +1,12 @@
+import { headers } from "next/headers";
 import { BookList } from "~/app/_components/book-list";
 import { auth } from "~/server/auth";
 import { api, HydrateClient } from "~/trpc/server";
-import Link from "next/link";
 
 export default async function Home() {
-  const session = await auth();
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
   void api.progress.getAll.prefetch();
 
@@ -22,17 +24,11 @@ export default async function Home() {
           <div className="flex flex-col items-center gap-2">
             <p className="text-sm text-white/40">
               {session ? (
-                <span>Signed in as {session.user?.name}</span>
+                <span>Signed in as {session.user.name}</span>
               ) : (
                 <span>Not signed in</span>
               )}
             </p>
-            <Link
-              href={session ? "/api/auth/signout" : "/api/auth/signin"}
-              className="rounded-full bg-white/10 px-6 py-2 text-sm font-semibold no-underline transition hover:bg-white/20"
-            >
-              {session ? "Sign out" : "Sign in"}
-            </Link>
           </div>
 
           <BookList />

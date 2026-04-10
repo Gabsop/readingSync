@@ -2,11 +2,13 @@ import { relations, sql } from "drizzle-orm";
 import {
   index,
   pgTableCreator,
-  primaryKey,
 } from "drizzle-orm/pg-core";
-import { type AdapterAccount } from "next-auth/adapters";
 
 export const createTable = pgTableCreator((name) => `web_${name}`);
+
+// ---------------------------------------------------------------------------
+// Reading progress & sync
+// ---------------------------------------------------------------------------
 
 export const readingProgress = createTable(
   "reading_progress",
@@ -27,7 +29,7 @@ export const readingProgress = createTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   }),
-  (t) => [index("book_id_idx").on(t.bookId)]
+  (t) => [index("book_id_idx").on(t.bookId)],
 );
 
 export const syncHistory = createTable(
@@ -49,47 +51,49 @@ export const syncHistory = createTable(
   (t) => [
     index("sync_history_book_id_idx").on(t.bookId),
     index("sync_history_book_source_idx").on(t.bookId, t.source),
-  ]
+  ],
 );
 
-export const users = createTable("user", (d) => ({
-  id: d
-    .varchar({ length: 255 })
-    .notNull()
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  name: d.varchar({ length: 255 }),
-  email: d.varchar({ length: 255 }).notNull(),
-  emailVerified: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`),
-  image: d.varchar({ length: 255 }),
+// ---------------------------------------------------------------------------
+// better-auth tables
+// ---------------------------------------------------------------------------
+
+export const users = createTable("users", (d) => ({
+  id: d.varchar({ length: 36 }).notNull().primaryKey(),
+  name: d.text().notNull(),
+  email: d.varchar({ length: 255 }).notNull().unique(),
+  emailVerified: d.boolean().notNull().default(false),
+  image: d.text(),
+  createdAt: d.timestamp().notNull().defaultNow(),
+  updatedAt: d.timestamp().notNull().defaultNow(),
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
   accounts: many(accounts),
+  sessions: many(sessions),
 }));
 
 export const accounts = createTable(
-  "account",
+  "accounts",
   (d) => ({
+    id: d.varchar({ length: 36 }).notNull().primaryKey(),
+    accountId: d.text().notNull(),
+    providerId: d.text().notNull(),
     userId: d
-      .varchar({ length: 255 })
+      .varchar({ length: 36 })
       .notNull()
-      .references(() => users.id),
-    type: d.varchar({ length: 255 }).$type<AdapterAccount["type"]>().notNull(),
-    provider: d.varchar({ length: 255 }).notNull(),
-    providerAccountId: d.varchar({ length: 255 }).notNull(),
-    refresh_token: d.text(),
-    access_token: d.text(),
-    expires_at: d.integer(),
-    token_type: d.varchar({ length: 255 }),
-    scope: d.varchar({ length: 255 }),
-    id_token: d.text(),
-    session_state: d.varchar({ length: 255 }),
+      .references(() => users.id, { onDelete: "cascade" }),
+    accessToken: d.text(),
+    refreshToken: d.text(),
+    idToken: d.text(),
+    accessTokenExpiresAt: d.timestamp(),
+    refreshTokenExpiresAt: d.timestamp(),
+    scope: d.text(),
+    password: d.text(),
+    createdAt: d.timestamp().notNull().defaultNow(),
+    updatedAt: d.timestamp().notNull().defaultNow(),
   }),
-  (t) => [
-    primaryKey({ columns: [t.provider, t.providerAccountId] }),
-    index("account_user_id_idx").on(t.userId),
-  ]
+  (t) => [index("accounts_user_id_idx").on(t.userId)],
 );
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -97,28 +101,32 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
 }));
 
 export const sessions = createTable(
-  "session",
+  "sessions",
   (d) => ({
-    sessionToken: d.varchar({ length: 255 }).notNull().primaryKey(),
+    id: d.varchar({ length: 36 }).notNull().primaryKey(),
+    expiresAt: d.timestamp().notNull(),
+    token: d.text().notNull().unique(),
+    createdAt: d.timestamp().notNull().defaultNow(),
+    updatedAt: d.timestamp().notNull().defaultNow(),
+    ipAddress: d.text(),
+    userAgent: d.text(),
     userId: d
-      .varchar({ length: 255 })
+      .varchar({ length: 36 })
       .notNull()
-      .references(() => users.id),
-    expires: d.timestamp({ withTimezone: true }).notNull(),
+      .references(() => users.id, { onDelete: "cascade" }),
   }),
-  (t) => [index("session_userId_idx").on(t.userId)]
+  (t) => [index("sessions_user_id_idx").on(t.userId)],
 );
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, { fields: [sessions.userId], references: [users.id] }),
 }));
 
-export const verificationTokens = createTable(
-  "verification_token",
-  (d) => ({
-    identifier: d.varchar({ length: 255 }).notNull(),
-    token: d.varchar({ length: 255 }).notNull(),
-    expires: d.timestamp({ withTimezone: true }).notNull(),
-  }),
-  (t) => [primaryKey({ columns: [t.identifier, t.token] })]
-);
+export const verifications = createTable("verifications", (d) => ({
+  id: d.varchar({ length: 36 }).notNull().primaryKey(),
+  identifier: d.text().notNull(),
+  value: d.text().notNull(),
+  expiresAt: d.timestamp().notNull(),
+  createdAt: d.timestamp().defaultNow(),
+  updatedAt: d.timestamp().defaultNow(),
+}));

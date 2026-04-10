@@ -18,12 +18,23 @@
   - Placeholder screens for all tabs with empty states
 
 ### In Progress
-- [ ] better-auth setup: Google OAuth on backend, login screen in app
+- [ ] Mobile login screen: wire up expo-auth-session to better-auth Google OAuth
 - [ ] API key generation endpoint for KOReader plugin
 
 ### Not Started
-- [ ] Basic XHTML -> React Native component mapping
-- [ ] Backend: add `device_id` field, replace NextAuth with better-auth
+- [ ] Backend: add `device_id` field to progress records
+
+### Completed (continued 2)
+- [x] better-auth setup on backend (replaces NextAuth + Discord OAuth)
+  - Installed `better-auth`, removed `next-auth` and `@auth/drizzle-adapter`
+  - Configured Google OAuth provider via `betterAuth()` with Drizzle adapter
+  - New auth schema: `web_users`, `web_accounts`, `web_sessions`, `web_verifications`
+  - Catch-all route handler at `/api/auth/[...all]` via `toNextJsHandler`
+  - Auth client export (`src/lib/auth-client.ts`) for React components
+  - Session helper (`src/server/auth/helpers.ts`) for REST API route protection
+  - tRPC context updated to use `auth.api.getSession()` with headers
+  - Env vars updated: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`
+  - Drizzle migration generated, TypeScript passes cleanly
 
 ### Completed (continued)
 - [x] EPUB parser module (`mobile/lib/epub-parser.ts`)
@@ -36,6 +47,13 @@
   - Cover image extraction (EPUB 3 properties, EPUB 2 meta, id heuristic)
   - `readChapter()` helper for accessing chapter XHTML by spine index
   - Dependencies added: jszip, fast-xml-parser
+- [x] Basic XHTML → React Native component mapping (`mobile/lib/xhtml-renderer.tsx`)
+  - Renders EPUB XHTML as native RN components (Text, View, Image)
+  - Supports: p, h1–h6, em/i, strong/b, u, s/del, sup/sub, a, span
+  - Supports: ul/ol/li lists, blockquote, hr, br, img, basic tables
+  - Inline CSS style parsing (font-weight, font-style, text-align, color, font-size, margins)
+  - Reader screen wired up: loads book from SQLite, parses EPUB, renders chapters
+  - Chapter-by-chapter navigation (prev/next) with loading/error states
 - [x] Local SQLite database schema
   - Tables: books, reading_positions, sync_queue, settings
   - WAL journal mode, foreign keys enabled

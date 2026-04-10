@@ -34,6 +34,12 @@ import {
 } from "../../lib/reader-settings";
 import { ReaderSettingsPanel } from "../../lib/reader-settings-panel";
 import { ControlsOverlay } from "../../lib/controls-overlay";
+import {
+  enqueueSync,
+  flushSyncQueue,
+  resolveProgressOnOpen,
+  cancelPendingFlush,
+} from "../../lib/sync-engine";
 
 // Gesture thresholds
 const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
@@ -74,6 +80,8 @@ export default function ReaderScreen() {
   const pendingRestorePageRef = useRef<number | null>(null);
   // Debounce timer for saving progress
   const saveProgressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Whether the user has turned a page (suppresses sync prompts)
+  const userHasNavigatedRef = useRef(false);
 
   // Reader settings
   const {
@@ -184,6 +192,32 @@ export default function ReaderScreen() {
         });
         setChapterContent(rendered);
       }
+
+      // Non-blocking: check remote progress in background
+      resolveProgressOnOpen(db, row.book_id).then((result) => {
+        if (!result || result.action === "use_local") return;
+        // If user has already turned a page, suppress any remote navigation
+        if (userHasNavigatedRef.current) return;
+
+        if (result.action === "use_remote" && result.remote?.position) {
+          try {
+            const remotePos = JSON.parse(result.remote.position);
+            if (
+              typeof remotePos.chapter === "number" &&
+              remotePos.chapter < epub.spine.length
+            ) {
+              // Apply remote position
+              if (typeof remotePos.page === "number" && remotePos.page > 0) {
+                pendingRestorePageRef.current = remotePos.page;
+              }
+              setCurrentChapter(remotePos.chapter);
+            }
+          } catch {
+            // Invalid remote position JSON — ignore
+          }
+        }
+        // "prompt" action will be handled by conflict resolution UI (future task)
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load book");
     } finally {
@@ -313,6 +347,16 @@ export default function ReaderScreen() {
          updated_at = datetime('now')`,
       [bid, position, gPage, total, progress],
     );
+
+    // Enqueue for background sync to backend (debounced internally at 3s)
+    enqueueSync(db, {
+      bookId: bid,
+      bookTitle: bookTitle || undefined,
+      position,
+      currentPage: gPage,
+      totalPages: total,
+      progress,
+    });
   }
 
   // Save progress on every page/chapter change
@@ -321,15 +365,18 @@ export default function ReaderScreen() {
     scheduleSaveProgress(currentChapter, currentPage);
   }, [currentPage, currentChapter]);
 
-  // Save progress immediately on unmount
+  // Save progress immediately on unmount, flush sync queue
   useEffect(() => {
     return () => {
       if (saveProgressTimerRef.current) {
         clearTimeout(saveProgressTimerRef.current);
       }
+      cancelPendingFlush();
       if (textBookIdRef.current && totalChapters > 0) {
         saveProgressToDb(currentChapter, currentPage);
       }
+      // Fire-and-forget flush of any pending sync items
+      flushSyncQueue(db);
     };
   }, [currentChapter, currentPage, totalChapters]);
 
@@ -357,6 +404,7 @@ export default function ReaderScreen() {
 
   function goToNextPage() {
     if (isAnimating.current) return;
+    userHasNavigatedRef.current = true;
     if (currentPage < totalPages - 1) {
       hapticTick();
       const nextPage = currentPage + 1;
@@ -370,6 +418,7 @@ export default function ReaderScreen() {
 
   function goToPreviousPage() {
     if (isAnimating.current) return;
+    userHasNavigatedRef.current = true;
     if (currentPage > 0) {
       hapticTick();
       const prevPage = currentPage - 1;

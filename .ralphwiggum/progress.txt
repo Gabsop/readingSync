@@ -207,6 +207,33 @@
   - Dependency: `expo-document-picker` installed
   - TypeScript passes cleanly
 
+### Completed (continued 2)
+- [x] Sync engine: push/pull with ReadingSync API
+  - New `sync-engine.ts` module (`mobile/lib/sync-engine.ts`) with full push/pull sync
+  - **Device identity**: generates and persists a unique device ID via `expo-secure-store`
+  - **Push sync (enqueue + flush)**:
+    - `enqueueSync()`: inserts progress into `sync_queue` table, coalesces pending entries per book
+    - Debounced flush (3 seconds) — batches rapid page turns into one API call
+    - `flushSyncQueue()`: processes pending queue items, POSTs to `POST /api/progress`
+    - Handles "skipped" responses (server has newer timestamp) — marks as synced, no retry
+    - Exponential retry on network errors, max 5 attempts before marking as failed
+    - Auto-cleanup of old synced/failed entries (24h retention)
+  - **Pull sync (on book open)**:
+    - `fetchRemoteProgress()`: GETs latest progress from `GET /api/progress/:bookId`
+    - `resolveProgressOnOpen()`: compares local vs remote, handles conflict resolution logic
+    - Same-device detection: skips if remote is our own echo (device ID match)
+    - Staleness threshold: ignores remote positions older than 7 days
+    - Silent apply: if remote is <5% different from local, applies without prompting
+    - Prompt action: if >5% different, returns "prompt" for future conflict UI
+  - **Reader integration**:
+    - `saveProgressToDb()` now enqueues sync after each local save
+    - Non-blocking remote progress fetch on book open (background)
+    - User navigation suppresses late-arriving sync prompts (`userHasNavigatedRef`)
+    - Sync queue flushed on reader unmount (fire-and-forget)
+    - `cancelPendingFlush()` called on cleanup to prevent stale timers
+  - Offline-first: all reads work without network, syncs when connectivity returns
+  - TypeScript passes cleanly, Expo build succeeds
+
 ### Not Started
 
 ## M4 — Polish & Ship

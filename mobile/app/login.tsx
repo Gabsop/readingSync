@@ -1,13 +1,57 @@
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { useState } from "react";
+import { View, Text, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as WebBrowser from "expo-web-browser";
+import * as AuthSession from "expo-auth-session";
+import { useAuthStore } from "../lib/auth-store";
+import { API_URL } from "../lib/api";
+
+// Ensure any lingering browser sessions are dismissed on app start
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
+  const setToken = useAuthStore((s) => s.setToken);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleGoogleSignIn = () => {
-    // TODO: Implement Google OAuth with expo-auth-session + better-auth
-    router.replace("/(tabs)/library");
+  const handleGoogleSignIn = async () => {
+    setIsSigningIn(true);
+    setError(null);
+
+    try {
+      const redirectUri = AuthSession.makeRedirectUri({
+        scheme: "readingsync",
+        path: "auth-callback",
+      });
+
+      // better-auth social sign-in → Google OAuth → mobile-callback → app redirect
+      const callbackPath = `/api/auth/mobile-callback?redirect_uri=${encodeURIComponent(redirectUri)}`;
+      const signInUrl = `${API_URL}/api/auth/sign-in/social?provider=google&callbackURL=${encodeURIComponent(callbackPath)}`;
+
+      const result = await WebBrowser.openAuthSessionAsync(signInUrl, redirectUri);
+
+      if (result.type === "success") {
+        const url = new URL(result.url);
+        const token = url.searchParams.get("token");
+        const authError = url.searchParams.get("error");
+
+        if (token) {
+          await setToken(token);
+          router.replace("/(tabs)/library");
+          return;
+        }
+
+        setError(authError ?? "Sign in failed. Please try again.");
+      } else if (result.type === "cancel") {
+        // User dismissed the browser — no error needed
+      }
+    } catch (e) {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setIsSigningIn(false);
+    }
   };
 
   return (
@@ -19,9 +63,19 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.actions}>
-          <Pressable style={styles.googleButton} onPress={handleGoogleSignIn}>
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          <Pressable
+            style={[styles.googleButton, isSigningIn && styles.googleButtonDisabled]}
+            onPress={handleGoogleSignIn}
+            disabled={isSigningIn}
+          >
+            {isSigningIn ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.googleButtonText}>Continue with Google</Text>
+            )}
           </Pressable>
+
+          {error && <Text style={styles.error}>{error}</Text>}
         </View>
 
         <Text style={styles.legal}>
@@ -67,10 +121,19 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: "center",
   },
+  googleButtonDisabled: {
+    opacity: 0.7,
+  },
   googleButtonText: {
     color: "#fff",
     fontSize: 17,
     fontWeight: "600",
+  },
+  error: {
+    color: "#FF3B30",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 12,
   },
   legal: {
     fontSize: 12,

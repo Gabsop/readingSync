@@ -22,7 +22,12 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { parseEpub, readChapter } from "../../lib/epub-parser";
+import {
+  parseEpub,
+  readChapter,
+  extractExcerptAtPosition,
+  searchExcerpt,
+} from "../../lib/epub-parser";
 import { renderXhtml, resetKeyCounter } from "../../lib/xhtml-renderer";
 import type { ParsedEpub } from "../../lib/epub-parser";
 import {
@@ -194,29 +199,74 @@ export default function ReaderScreen() {
       }
 
       // Non-blocking: check remote progress in background
-      resolveProgressOnOpen(db, row.book_id).then((result) => {
+      resolveProgressOnOpen(db, row.book_id).then(async (result) => {
         if (!result || result.action === "use_local") return;
-        // If user has already turned a page, suppress any remote navigation
         if (userHasNavigatedRef.current) return;
 
-        if (result.action === "use_remote" && result.remote?.position) {
+        const remote = result.remote;
+        if (!remote) return;
+
+        // Determine target position from remote
+        const applyRemote = result.action === "use_remote";
+        // "prompt" will be handled by conflict UI in a future task;
+        // for now, only auto-apply on "use_remote"
+        if (!applyRemote) return;
+
+        // --- Strategy 1: same-source mobile position (JSON { chapter, page }) ---
+        if (remote.source === "mobile") {
           try {
-            const remotePos = JSON.parse(result.remote.position);
+            const remotePos = JSON.parse(remote.position);
             if (
               typeof remotePos.chapter === "number" &&
               remotePos.chapter < epub.spine.length
             ) {
-              // Apply remote position
               if (typeof remotePos.page === "number" && remotePos.page > 0) {
                 pendingRestorePageRef.current = remotePos.page;
               }
               setCurrentChapter(remotePos.chapter);
+              return;
             }
           } catch {
-            // Invalid remote position JSON — ignore
+            // Not valid JSON — fall through to excerpt matching
           }
         }
-        // "prompt" action will be handled by conflict resolution UI (future task)
+
+        // --- Strategy 2: excerpt-based text matching (cross-renderer sync) ---
+        if (remote.excerpt) {
+          try {
+            const matches = await searchExcerpt(
+              epub,
+              remote.excerpt,
+              remote.progress,
+            );
+            if (userHasNavigatedRef.current) return; // user moved on during search
+            if (matches.length > 0) {
+              const best = matches[0]!;
+              // Estimate page within chapter from character position ratio
+              const chapterPages =
+                chapterPageCountsRef.current.get(best.chapter) ?? 1;
+              const estimatedPage = Math.round(
+                best.chapterProgress * (chapterPages - 1),
+              );
+              if (estimatedPage > 0) {
+                pendingRestorePageRef.current = estimatedPage;
+              }
+              setCurrentChapter(best.chapter);
+              return;
+            }
+          } catch {
+            // Excerpt search failed — fall through to percentage fallback
+          }
+        }
+
+        // --- Strategy 3: percentage approximation (fallback) ---
+        if (typeof remote.progress === "number" && remote.progress > 0) {
+          const targetChapter = Math.min(
+            Math.floor(remote.progress * epub.spine.length),
+            epub.spine.length - 1,
+          );
+          setCurrentChapter(targetChapter);
+        }
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load book");
@@ -336,16 +386,30 @@ export default function ReaderScreen() {
     // Position stored as JSON: { chapter, page }
     const position = JSON.stringify({ chapter, page });
 
+    // Extract ~500 char excerpt at current position for cross-device sync
+    let excerpt: string | undefined;
+    const epub = epubRef.current;
+    if (epub) {
+      const chapterPages = counts.get(chapter) ?? 1;
+      const positionRatio = chapterPages > 1 ? page / (chapterPages - 1) : 0;
+      try {
+        excerpt = await extractExcerptAtPosition(epub, chapter, positionRatio);
+      } catch {
+        // Non-critical — sync will still work via progress percentage fallback
+      }
+    }
+
     await db.runAsync(
-      `INSERT INTO reading_positions (book_id, position, current_page, total_pages, progress, source, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'mobile', datetime('now'))
+      `INSERT INTO reading_positions (book_id, position, current_page, total_pages, progress, excerpt, source, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'mobile', datetime('now'))
        ON CONFLICT(book_id) DO UPDATE SET
          position = excluded.position,
          current_page = excluded.current_page,
          total_pages = excluded.total_pages,
          progress = excluded.progress,
+         excerpt = excluded.excerpt,
          updated_at = datetime('now')`,
-      [bid, position, gPage, total, progress],
+      [bid, position, gPage, total, progress, excerpt ?? null],
     );
 
     // Enqueue for background sync to backend (debounced internally at 3s)
@@ -356,6 +420,7 @@ export default function ReaderScreen() {
       currentPage: gPage,
       totalPages: total,
       progress,
+      excerpt,
     });
   }
 

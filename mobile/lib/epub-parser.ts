@@ -182,6 +182,125 @@ export async function readChapter(
 }
 
 // ---------------------------------------------------------------------------
+// Text extraction & excerpt search (for cross-device sync)
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip XHTML/HTML tags and normalize whitespace to produce plain text.
+ */
+function stripXhtmlTags(xhtml: string): string {
+  return (
+    xhtml
+      // Remove script/style content
+      .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+      // Remove all tags
+      .replace(/<[^>]+>/g, " ")
+      // Decode common HTML entities
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      // Normalize whitespace
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+/**
+ * Extract plain text from a chapter's XHTML content by stripping all tags.
+ */
+export async function extractPlainText(
+  epub: ParsedEpub,
+  spineIndex: number,
+): Promise<string> {
+  const xhtml = await readChapter(epub, spineIndex);
+  return stripXhtmlTags(xhtml);
+}
+
+export interface ExcerptSearchResult {
+  /** Spine index where the excerpt was found */
+  chapter: number;
+  /** Character offset within the chapter's plain text */
+  charOffset: number;
+  /** Estimated progress within the chapter (0–1) */
+  chapterProgress: number;
+}
+
+/**
+ * Search all chapters for an excerpt string. Returns matching locations,
+ * sorted by proximity to `progressHint` (0–1 global progress) if provided.
+ *
+ * The search normalizes whitespace on both sides so that minor formatting
+ * differences between renderers (KOReader vs this app) don't break matching.
+ */
+export async function searchExcerpt(
+  epub: ParsedEpub,
+  excerpt: string,
+  progressHint?: number,
+): Promise<ExcerptSearchResult[]> {
+  const normalized = excerpt.replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+
+  const results: ExcerptSearchResult[] = [];
+
+  for (let i = 0; i < epub.spine.length; i++) {
+    const plainText = await extractPlainText(epub, i);
+    const idx = plainText.indexOf(normalized);
+    if (idx !== -1) {
+      results.push({
+        chapter: i,
+        charOffset: idx,
+        chapterProgress: plainText.length > 0 ? idx / plainText.length : 0,
+      });
+    }
+  }
+
+  // Sort by proximity to expected global position if a hint is available
+  if (progressHint !== undefined && results.length > 1) {
+    const expectedChapter = Math.floor(progressHint * epub.spine.length);
+    results.sort((a, b) => {
+      const distA = Math.abs(a.chapter - expectedChapter);
+      const distB = Math.abs(b.chapter - expectedChapter);
+      return distA - distB;
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Extract ~500 characters of text at an approximate position within a chapter.
+ * Used when saving progress to include an excerpt for cross-device sync.
+ *
+ * @param positionRatio - 0–1 fraction within the chapter (e.g. page / totalPagesInChapter)
+ */
+export async function extractExcerptAtPosition(
+  epub: ParsedEpub,
+  spineIndex: number,
+  positionRatio: number,
+): Promise<string> {
+  const plainText = await extractPlainText(epub, spineIndex);
+  if (!plainText) return "";
+
+  const EXCERPT_LENGTH = 500;
+  const charOffset = Math.floor(
+    Math.min(Math.max(positionRatio, 0), 1) * plainText.length,
+  );
+
+  // Walk back to a word boundary (up to 50 chars) for a cleaner start
+  let start = charOffset;
+  const minStart = Math.max(0, charOffset - 50);
+  while (start > minStart && plainText[start - 1] !== " ") {
+    start--;
+  }
+
+  return plainText.slice(start, start + EXCERPT_LENGTH).trim();
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 

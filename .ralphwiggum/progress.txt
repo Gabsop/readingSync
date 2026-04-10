@@ -234,6 +234,25 @@
   - Offline-first: all reads work without network, syncs when connectivity returns
   - TypeScript passes cleanly, Expo build succeeds
 
+### Completed (continued 3)
+- [x] Excerpt-based text matching for Kindle sync
+  - New `extractPlainText(epub, spineIndex)` function in `epub-parser.ts`: strips XHTML tags,
+    decodes HTML entities, normalizes whitespace to produce searchable plain text
+  - New `searchExcerpt(epub, excerpt, progressHint?)`: searches all spine chapters for an excerpt
+    string, returns matches sorted by proximity to expected global progress position
+  - New `extractExcerptAtPosition(epub, spineIndex, positionRatio)`: extracts ~500 chars of text
+    at an approximate position within a chapter for cross-device sync payloads
+  - Reader now populates `excerpt` field on every progress save — excerpt is stored in SQLite
+    `reading_positions` table and included in sync pushes to the backend
+  - Remote progress resolution now uses 3-tier strategy:
+    1. Same-source mobile positions: parse `{ chapter, page }` JSON directly (existing behavior)
+    2. Cross-renderer positions (Kindle): search EPUB for remote excerpt text, estimate page from
+       character offset ratio — bypasses incompatible position formats entirely
+    3. Percentage fallback: if excerpt not found, approximate position using `progress * spineLength`
+  - Excerpt search normalizes whitespace on both sides for robust matching across renderers
+  - Search is async and respects `userHasNavigatedRef` — late results are suppressed if user moved on
+  - TypeScript passes cleanly
+
 ### Not Started
 
 ## M4 — Polish & Ship

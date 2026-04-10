@@ -24,6 +24,7 @@ export const readingProgress = createTable(
     renderSettings: d.text(),
     excerpt: d.varchar({ length: 2048 }),
     source: d.varchar({ length: 32 }),
+    deviceId: d.varchar({ length: 64 }),
     updatedAt: d
       .timestamp({ withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
@@ -43,6 +44,7 @@ export const syncHistory = createTable(
     progress: d.real().notNull(),
     excerpt: d.varchar({ length: 2048 }),
     source: d.varchar({ length: 32 }).notNull(),
+    deviceId: d.varchar({ length: 64 }),
     createdAt: d
       .timestamp({ withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)

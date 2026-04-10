@@ -17,9 +17,6 @@
   - Reader screen with dynamic [bookId] route
   - Placeholder screens for all tabs with empty states
 
-### In Progress
-- [ ] Backend: add `device_id` field to progress records
-
 ### Not Started
 
 ### Completed (continued 3)
@@ -45,6 +42,16 @@
   - tRPC context updated to use `auth.api.getSession()` with headers
   - Env vars updated: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`
   - Drizzle migration generated, TypeScript passes cleanly
+
+### Completed (continued 5)
+- [x] Backend: add `device_id` field to progress records
+  - Added nullable `deviceId` (varchar 64) column to `readingProgress` and `syncHistory` tables
+  - REST `POST /api/progress` accepts `device_id` in request body, stores in both tables
+  - REST `GET /api/progress/:bookId` returns `device_id` in response (both direct and source-filtered)
+  - tRPC `save` mutation accepts optional `deviceId` input, stores in both tables
+  - Drizzle migration generated (`0002_violet_hex.sql`)
+  - Enables same-device detection for sync conflict resolution
+  - TypeScript passes cleanly
 
 ### Completed (continued 4)
 - [x] API key generation endpoint for KOReader plugin

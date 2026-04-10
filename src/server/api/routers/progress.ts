@@ -33,6 +33,7 @@ export const progressRouter = createTRPCRouter({
         updatedAt: z.number().optional(),
         source: z.string().optional(),
         excerpt: z.string().optional(),
+        deviceId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -59,6 +60,7 @@ export const progressRouter = createTRPCRouter({
             bookTitle: input.bookTitle ?? existing.bookTitle,
             excerpt: input.excerpt ?? existing.excerpt,
             source: input.source ?? existing.source,
+            deviceId: input.deviceId ?? existing.deviceId,
             updatedAt: timestamp,
           })
           .where(eq(readingProgress.bookId, input.bookId));
@@ -72,6 +74,7 @@ export const progressRouter = createTRPCRouter({
           progress: input.progress,
           excerpt: input.excerpt,
           source: input.source,
+          deviceId: input.deviceId,
           updatedAt: timestamp,
         });
       }
@@ -86,6 +89,7 @@ export const progressRouter = createTRPCRouter({
           progress: input.progress,
           excerpt: input.excerpt,
           source: input.source,
+          deviceId: input.deviceId,
           createdAt: timestamp,
         });
       }

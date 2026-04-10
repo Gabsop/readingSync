@@ -141,12 +141,58 @@
   - Chapter re-renders on settings change (font, theme, spacing, margins, alignment)
   - TypeScript passes cleanly
 
-### Not Started
-- [ ] Controls overlay (top/bottom bars)
-- [ ] Progress tracking (local)
+### Completed (continued 3)
+- [x] Controls overlay (top/bottom bars)
+  - New `ControlsOverlay` component (`mobile/lib/controls-overlay.tsx`)
+  - Top bar: "N pages left in chapter" text (matches Apple Books)
+  - Bottom toolbar: frosted glass bar (`expo-blur` BlurView) with three buttons:
+    - "Contents · N%" with list icon — placeholder for TOC (M4)
+    - "Search Book" with magnifying glass icon — placeholder for search (M4)
+    - "Themes & Settings" with Aa icon — opens existing settings panel
+  - Bottom action row: frosted glass bar with Share, display, lock, bookmark icons
+  - Smooth 200ms fade in/out animation via Reanimated `withTiming`
+  - Center tap (20% zone) toggles controls overlay visibility
+  - Controls auto-dismiss on page turn (tap or swipe) for uninterrupted reading
+  - Theme-aware: adapts blur tint, icon colors, and toolbar background for dark/light themes
+  - `isDark()` helper detects dark themes via luminance calculation
+  - TOC list icon added to clean-state footer (bottom-right, matching Apple Books reference)
+  - Ionicons added to reader screen for footer TOC icon
+  - TypeScript passes cleanly, Expo build succeeds
+
+### Completed (continued 4)
+- [x] Progress tracking (local)
+  - Reading position (chapter + page) saved to SQLite `reading_positions` table
+  - Debounced save (1 second) on every page turn to avoid excessive writes
+  - Position stored as JSON `{ chapter, page }` with calculated global page and progress percentage
+  - Saved position restored on book reopen: loads chapter, scrolls to saved page after content measurement
+  - Progress percentage calculated from global page counts across all chapters
+  - Immediate save on reader unmount (cleanup timer + flush)
+  - Uses UPSERT (`ON CONFLICT DO UPDATE`) for single-row-per-book semantics
+  - TypeScript passes cleanly, Expo build succeeds
 
 ## M3 — Library & Sync
-Not started.
+
+### Completed
+- [x] Library grid with cover extraction
+  - 2-column FlatList grid of book covers matching Apple Books layout
+  - Books queried from SQLite with LEFT JOIN on `reading_positions` for progress
+  - Sorted by most recently read (falls back to import date)
+  - Cover extraction: parses EPUB, extracts cover image, caches as file in `Documents/covers/`
+  - Covers saved on first load for books that have `epub_path` but no `cover_path`
+  - `cover_path` updated in SQLite after extraction for instant display on subsequent loads
+  - Placeholder covers: deterministic HSL color from title hash with title/author text overlay
+  - 3D depth shadow on cover cards (offset shadow for physical book appearance)
+  - Progress percentage shown below each cover (e.g. "42%")
+  - Green "NEW" pill badge for books with no reading progress
+  - Ellipsis icon for future context menu (long-press actions)
+  - Pull-to-refresh to reload library
+  - Reloads on tab focus (useFocusEffect) to pick up changes after reading
+  - Empty state with library icon when no books exist
+  - Tap navigates to reader screen via `router.push(/read/{id})`
+  - Uses expo-file-system v19 new API (Paths, File, Directory classes)
+  - TypeScript passes cleanly, Expo build succeeds
+
+### Not Started
 
 ## M4 — Polish & Ship
 Not started.

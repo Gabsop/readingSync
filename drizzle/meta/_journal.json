@@ -8,6 +8,13 @@
       "when": 1775856606730,
       "tag": "0000_plain_thanos",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775857234861,
+      "tag": "0001_fearless_thor_girl",
+      "breakpoints": true
     }
   ]
 }

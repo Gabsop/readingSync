@@ -130,3 +130,37 @@ export const verifications = createTable("verifications", (d) => ({
   createdAt: d.timestamp().defaultNow(),
   updatedAt: d.timestamp().defaultNow(),
 }));
+
+// ---------------------------------------------------------------------------
+// API keys (KOReader plugin auth)
+// ---------------------------------------------------------------------------
+
+export const apiKeys = createTable(
+  "api_keys",
+  (d) => ({
+    id: d.integer().primaryKey().generatedAlwaysAsIdentity(),
+    userId: d
+      .varchar({ length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The first 8 chars stored in plain text for display ("rs_k_AbC1...") */
+    prefix: d.varchar({ length: 16 }).notNull(),
+    /** SHA-256 hash of the full key */
+    keyHash: d.varchar({ length: 64 }).notNull().unique(),
+    name: d.varchar({ length: 128 }).notNull().default("KOReader"),
+    lastUsedAt: d.timestamp({ withTimezone: true }),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    revokedAt: d.timestamp({ withTimezone: true }),
+  }),
+  (t) => [
+    index("api_keys_user_id_idx").on(t.userId),
+    index("api_keys_key_hash_idx").on(t.keyHash),
+  ],
+);
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  user: one(users, { fields: [apiKeys.userId], references: [users.id] }),
+}));

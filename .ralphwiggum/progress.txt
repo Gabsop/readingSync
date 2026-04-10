@@ -18,11 +18,21 @@
   - Placeholder screens for all tabs with empty states
 
 ### In Progress
-- [ ] Mobile login screen: wire up expo-auth-session to better-auth Google OAuth
-- [ ] API key generation endpoint for KOReader plugin
+- [ ] Backend: add `device_id` field to progress records
 
 ### Not Started
-- [ ] Backend: add `device_id` field to progress records
+
+### Completed (continued 3)
+- [x] Mobile login screen: wired up expo-auth-session to better-auth Google OAuth
+  - Auth store (`mobile/lib/auth-store.ts`): Zustand + expo-secure-store for token persistence
+  - API helper (`mobile/lib/api.ts`): backend URL config + Bearer token–injecting `authFetch`
+  - Mobile callback endpoint (`src/app/api/auth/mobile-callback/route.ts`): reads better-auth
+    session cookie after OAuth, redirects to `readingsync://auth-callback?token=<token>`
+  - Login screen opens better-auth sign-in URL via `expo-web-browser` `openAuthSessionAsync`;
+    Google OAuth → better-auth callback → mobile-callback → app redirect with token
+  - Index screen loads token from SecureStore, redirects to library if authenticated
+  - Open redirect protection: mobile-callback validates redirect_uri against allowed schemes
+  - Loading + error states on sign-in button
 
 ### Completed (continued 2)
 - [x] better-auth setup on backend (replaces NextAuth + Discord OAuth)
@@ -35,6 +45,19 @@
   - tRPC context updated to use `auth.api.getSession()` with headers
   - Env vars updated: `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`
   - Drizzle migration generated, TypeScript passes cleanly
+
+### Completed (continued 4)
+- [x] API key generation endpoint for KOReader plugin
+  - New `web_api_keys` table: userId (FK), prefix, keyHash (SHA-256, unique), name, lastUsedAt, createdAt, revokedAt
+  - Drizzle migration generated (`0001_fearless_thor_girl.sql`)
+  - `POST /api/auth/api-keys` — generates a new API key (returns full key once, stores SHA-256 hash)
+  - `GET /api/auth/api-keys` — lists active keys for the authenticated user (prefix, name, lastUsedAt)
+  - `DELETE /api/auth/api-keys` — soft-revokes a key by setting revokedAt
+  - `getSessionFromRequest()` now resolves `x-api-key` header: hashes the incoming key, looks up in
+    `web_api_keys` (excluding revoked), joins to `web_users`, updates `lastUsedAt` fire-and-forget
+  - Key format: `rs_k_<32 random bytes base64url>`, prefix stored as first 13 chars for display
+  - Utility module (`src/server/auth/api-key-utils.ts`): `generateApiKey()` and `hashApiKey()`
+  - TypeScript passes cleanly
 
 ### Completed (continued)
 - [x] EPUB parser module (`mobile/lib/epub-parser.ts`)

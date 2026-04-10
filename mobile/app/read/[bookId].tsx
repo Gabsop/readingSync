@@ -45,6 +45,7 @@ import {
   resolveProgressOnOpen,
   cancelPendingFlush,
 } from "../../lib/sync-engine";
+import { SyncConflictPicker } from "../../lib/sync-conflict-picker";
 
 // Gesture thresholds
 const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
@@ -76,6 +77,16 @@ export default function ReaderScreen() {
   const [bookTitle, setBookTitle] = useState(bookId ?? "");
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(false);
+
+  // Sync conflict picker state
+  const [conflictData, setConflictData] = useState<{
+    localProgress: number;
+    localExcerpt?: string;
+    remoteProgress: number;
+    remoteExcerpt?: string;
+    remoteSource: string;
+    remotePosition: string;
+  } | null>(null);
 
   // The text book_id used for reading_positions (vs the integer id from route params)
   const textBookIdRef = useRef<string | null>(null);
@@ -206,73 +217,124 @@ export default function ReaderScreen() {
         const remote = result.remote;
         if (!remote) return;
 
-        // Determine target position from remote
-        const applyRemote = result.action === "use_remote";
-        // "prompt" will be handled by conflict UI in a future task;
-        // for now, only auto-apply on "use_remote"
-        if (!applyRemote) return;
-
-        // --- Strategy 1: same-source mobile position (JSON { chapter, page }) ---
-        if (remote.source === "mobile") {
-          try {
-            const remotePos = JSON.parse(remote.position);
-            if (
-              typeof remotePos.chapter === "number" &&
-              remotePos.chapter < epub.spine.length
-            ) {
-              if (typeof remotePos.page === "number" && remotePos.page > 0) {
-                pendingRestorePageRef.current = remotePos.page;
-              }
-              setCurrentChapter(remotePos.chapter);
-              return;
-            }
-          } catch {
-            // Not valid JSON — fall through to excerpt matching
-          }
-        }
-
-        // --- Strategy 2: excerpt-based text matching (cross-renderer sync) ---
-        if (remote.excerpt) {
-          try {
-            const matches = await searchExcerpt(
-              epub,
-              remote.excerpt,
-              remote.progress,
-            );
-            if (userHasNavigatedRef.current) return; // user moved on during search
-            if (matches.length > 0) {
-              const best = matches[0]!;
-              // Estimate page within chapter from character position ratio
-              const chapterPages =
-                chapterPageCountsRef.current.get(best.chapter) ?? 1;
-              const estimatedPage = Math.round(
-                best.chapterProgress * (chapterPages - 1),
-              );
-              if (estimatedPage > 0) {
-                pendingRestorePageRef.current = estimatedPage;
-              }
-              setCurrentChapter(best.chapter);
-              return;
-            }
-          } catch {
-            // Excerpt search failed — fall through to percentage fallback
-          }
-        }
-
-        // --- Strategy 3: percentage approximation (fallback) ---
-        if (typeof remote.progress === "number" && remote.progress > 0) {
-          const targetChapter = Math.min(
-            Math.floor(remote.progress * epub.spine.length),
-            epub.spine.length - 1,
+        // --- "prompt" action: show conflict picker ---
+        if (result.action === "prompt") {
+          // Load local excerpt from SQLite for display
+          const localRow = await db.getFirstAsync<{ excerpt: string | null }>(
+            "SELECT excerpt FROM reading_positions WHERE book_id = ?",
+            [row.book_id],
           );
-          setCurrentChapter(targetChapter);
+          setConflictData({
+            localProgress: result.localProgress ?? 0,
+            localExcerpt: localRow?.excerpt ?? undefined,
+            remoteProgress: result.remoteProgress ?? remote.progress,
+            remoteExcerpt: remote.excerpt,
+            remoteSource: remote.source ?? "kindle",
+            remotePosition: remote.position,
+          });
+          return;
         }
+
+        // --- "use_remote" action: auto-apply ---
+        applyRemotePosition(remote, epub);
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load book");
     } finally {
       setLoading(false);
     }
+  }
+
+  /** Navigate to a remote position using the 3-tier strategy. */
+  async function applyRemotePosition(
+    remote: NonNullable<Awaited<ReturnType<typeof resolveProgressOnOpen>>>["remote"] & {},
+    epub: ParsedEpub,
+  ) {
+    if (userHasNavigatedRef.current) return;
+
+    // --- Strategy 1: same-source mobile position (JSON { chapter, page }) ---
+    if (remote.source === "mobile") {
+      try {
+        const remotePos = JSON.parse(remote.position);
+        if (
+          typeof remotePos.chapter === "number" &&
+          remotePos.chapter < epub.spine.length
+        ) {
+          if (typeof remotePos.page === "number" && remotePos.page > 0) {
+            pendingRestorePageRef.current = remotePos.page;
+          }
+          setCurrentChapter(remotePos.chapter);
+          return;
+        }
+      } catch {
+        // Not valid JSON — fall through to excerpt matching
+      }
+    }
+
+    // --- Strategy 2: excerpt-based text matching (cross-renderer sync) ---
+    if (remote.excerpt) {
+      try {
+        const matches = await searchExcerpt(
+          epub,
+          remote.excerpt,
+          remote.progress,
+        );
+        if (userHasNavigatedRef.current) return;
+        if (matches.length > 0) {
+          const best = matches[0]!;
+          const chapterPages =
+            chapterPageCountsRef.current.get(best.chapter) ?? 1;
+          const estimatedPage = Math.round(
+            best.chapterProgress * (chapterPages - 1),
+          );
+          if (estimatedPage > 0) {
+            pendingRestorePageRef.current = estimatedPage;
+          }
+          setCurrentChapter(best.chapter);
+          return;
+        }
+      } catch {
+        // Excerpt search failed — fall through to percentage fallback
+      }
+    }
+
+    // --- Strategy 3: percentage approximation (fallback) ---
+    if (typeof remote.progress === "number" && remote.progress > 0) {
+      const targetChapter = Math.min(
+        Math.floor(remote.progress * epub.spine.length),
+        epub.spine.length - 1,
+      );
+      setCurrentChapter(targetChapter);
+    }
+  }
+
+  /** Handle user picking the remote option in the conflict picker. */
+  async function handlePickRemote() {
+    if (!conflictData) return;
+    setConflictData(null);
+    userHasNavigatedRef.current = true;
+
+    const epub = epubRef.current;
+    if (!epub) return;
+
+    // Build a minimal remote object from stored conflict data
+    await applyRemotePosition(
+      {
+        bookId: textBookIdRef.current ?? "",
+        position: conflictData.remotePosition,
+        progress: conflictData.remoteProgress,
+        excerpt: conflictData.remoteExcerpt,
+        source: conflictData.remoteSource,
+        updatedAt: 0,
+      },
+      epub,
+    );
+  }
+
+  /** Handle user picking the local option — just dismiss the picker. */
+  function handlePickLocal() {
+    setConflictData(null);
+    userHasNavigatedRef.current = true;
   }
 
   async function loadChapter(spineIndex: number) {
@@ -706,6 +768,30 @@ export default function ReaderScreen() {
         onIncreaseFontSize={increaseFontSize}
         onDecreaseFontSize={decreaseFontSize}
         onClose={() => setSettingsVisible(false)}
+      />
+
+      {/* Sync conflict picker */}
+      <SyncConflictPicker
+        visible={conflictData !== null}
+        bookTitle={bookTitle}
+        local={{
+          label: "Mobile",
+          source: "mobile",
+          progress: conflictData?.localProgress ?? 0,
+          excerpt: conflictData?.localExcerpt,
+          icon: "phone-portrait-outline",
+        }}
+        remote={{
+          label: conflictData?.remoteSource === "mobile" ? "Mobile" : "Kindle",
+          source: conflictData?.remoteSource ?? "kindle",
+          progress: conflictData?.remoteProgress ?? 0,
+          excerpt: conflictData?.remoteExcerpt,
+          icon: conflictData?.remoteSource === "mobile"
+            ? "phone-portrait-outline"
+            : "book-outline",
+        }}
+        onPickLocal={handlePickLocal}
+        onPickRemote={handlePickRemote}
       />
     </SafeAreaView>
   );

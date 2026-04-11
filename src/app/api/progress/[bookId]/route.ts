@@ -2,11 +2,17 @@ import { NextResponse } from "next/server";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "~/server/db";
 import { readingProgress, syncHistory } from "~/server/db/schema";
+import { getSessionFromRequest } from "~/server/auth/helpers";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ bookId: string }> },
 ) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { bookId } = await params;
   const url = new URL(request.url);
   const source = url.searchParams.get("source");

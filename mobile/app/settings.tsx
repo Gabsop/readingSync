@@ -20,12 +20,22 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import {
   getStorageInfo,
   clearDownloadCache,
   formatBytes,
   type StorageInfo,
 } from "../lib/storage-manager";
+import { authFetch, API_URL } from "../lib/api";
+
+interface ApiKeyInfo {
+  id: number;
+  prefix: string;
+  name: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -34,6 +44,79 @@ export default function SettingsScreen() {
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const [loadingStorage, setLoadingStorage] = useState(true);
   const [clearing, setClearing] = useState(false);
+
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(true);
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [newKey, setNewKey] = useState<string | null>(null);
+
+  const loadApiKeys = useCallback(async () => {
+    setLoadingKeys(true);
+    try {
+      const res = await authFetch("/api/auth/api-keys");
+      if (res.ok) {
+        const keys = (await res.json()) as ApiKeyInfo[];
+        setApiKeys(keys);
+      }
+    } catch {
+      // non-critical
+    } finally {
+      setLoadingKeys(false);
+    }
+  }, []);
+
+  async function handleGenerateKey() {
+    setGeneratingKey(true);
+    try {
+      const res = await authFetch("/api/auth/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "KOReader" }),
+      });
+      if (!res.ok) {
+        Alert.alert("Error", "Failed to generate API key");
+        return;
+      }
+      const data = (await res.json()) as { key: string };
+      setNewKey(data.key);
+      await Clipboard.setStringAsync(data.key);
+      Alert.alert(
+        "API Key Created",
+        "Your key has been copied to the clipboard. Paste it in KOReader under:\n\nReading Sync → Set API key\n\nThis key won't be shown again.",
+      );
+      loadApiKeys();
+    } catch {
+      Alert.alert("Error", "Something went wrong");
+    } finally {
+      setGeneratingKey(false);
+    }
+  }
+
+  async function handleRevokeKey(keyId: number, prefix: string) {
+    Alert.alert(
+      "Revoke API Key",
+      `Revoke key ${prefix}…? Your Kindle will stop syncing until you create a new key.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Revoke",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await authFetch("/api/auth/api-keys", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: keyId }),
+              });
+              loadApiKeys();
+            } catch {
+              Alert.alert("Error", "Failed to revoke key");
+            }
+          },
+        },
+      ],
+    );
+  }
 
   const loadStorage = useCallback(async () => {
     setLoadingStorage(true);
@@ -50,7 +133,8 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     loadStorage();
-  }, [loadStorage]);
+    loadApiKeys();
+  }, [loadStorage, loadApiKeys]);
 
   function handleClearCache() {
     if (!storageInfo || storageInfo.totalBytes === 0) return;
@@ -169,6 +253,61 @@ export default function SettingsScreen() {
           Clearing the cache removes downloaded EPUBs and covers from this device. Books will re-download from the cloud when opened. Reading progress is preserved.
         </Text>
 
+        {/* Kindle API Key Section */}
+        <Text style={styles.sectionHeader}>KINDLE SYNC</Text>
+        <View style={styles.section}>
+          {loadingKeys ? (
+            <View style={styles.row}>
+              <ActivityIndicator size="small" color="#8E8E93" />
+            </View>
+          ) : apiKeys.length > 0 ? (
+            apiKeys.map((key, i) => (
+              <View key={key.id}>
+                {i > 0 && <View style={styles.separator} />}
+                <View style={styles.row}>
+                  <View style={styles.rowLeft}>
+                    <Ionicons name="key-outline" size={22} color="#8E8E93" style={styles.rowIcon} />
+                    <View>
+                      <Text style={styles.rowLabel}>{key.prefix}…</Text>
+                      <Text style={styles.rowValueSecondary}>
+                        {key.lastUsedAt
+                          ? `Last used ${new Date(key.lastUsedAt).toLocaleDateString()}`
+                          : "Never used"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Pressable onPress={() => handleRevokeKey(key.id, key.prefix)} hitSlop={8}>
+                    <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+                  </Pressable>
+                </View>
+              </View>
+            ))
+          ) : (
+            <Pressable
+              style={({ pressed }) => [
+                styles.generateButton,
+                pressed && styles.clearButtonPressed,
+                generatingKey && styles.clearButtonDisabled,
+              ]}
+              onPress={handleGenerateKey}
+              disabled={generatingKey}
+            >
+              {generatingKey ? (
+                <ActivityIndicator size="small" color="#007AFF" />
+              ) : (
+                <>
+                  <Ionicons name="key-outline" size={20} color="#007AFF" style={styles.clearIcon} />
+                  <Text style={styles.generateButtonText}>Generate API Key</Text>
+                </>
+              )}
+            </Pressable>
+          )}
+        </View>
+
+        <Text style={styles.sectionFooter}>
+          Generate an API key to sync reading progress from your Kindle. In KOReader, go to Reading Sync → Set API key and paste the key.
+        </Text>
+
         {/* About Section */}
         <Text style={styles.sectionHeader}>ABOUT</Text>
         <View style={styles.section}>
@@ -284,6 +423,19 @@ const styles = StyleSheet.create({
   clearButtonText: {
     fontSize: 16,
     color: "#FF3B30",
+    fontWeight: "500",
+  },
+  generateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 44,
+  },
+  generateButtonText: {
+    fontSize: 16,
+    color: "#007AFF",
     fontWeight: "500",
   },
 });

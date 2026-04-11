@@ -6,9 +6,14 @@ import { db } from "~/server/db";
 import { r2 } from "~/server/r2";
 import { env } from "~/env";
 import { readingProgress } from "~/server/db/schema";
+import { getSessionFromRequest } from "~/server/auth/helpers";
 
 // Step 1: Generate a presigned URL for direct upload to R2
 export async function POST(request: Request) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const { fileName } = (await request.json()) as { fileName: string };
 
   if (!fileName) {
@@ -33,6 +38,10 @@ export async function POST(request: Request) {
 
 // Step 2: After client uploads directly to R2, save to database
 export async function PUT(request: Request) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const { key, safeName } = (await request.json()) as {
     key: string;
     safeName: string;

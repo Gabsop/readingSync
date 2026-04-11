@@ -12,6 +12,16 @@ local ReadingSync = WidgetContainer:extend{
 local API_URL = "https://reading-sync.vercel.app/api/progress"
 local UPLOAD_URL = "https://reading-sync.vercel.app/api/upload"
 local LOG_PATH = "/mnt/us/reading_sync_log.txt"
+local CONFIG_PATH = "/mnt/us/.reading_sync_config"
+
+local function loadApiKey()
+    local file = io.open(CONFIG_PATH, "r")
+    if not file then return nil end
+    local key = file:read("*l")
+    file:close()
+    if key and key ~= "" then return key:match("^%s*(.-)%s*$") end
+    return nil
+end
 
 local function log(msg)
     local file = io.open(LOG_PATH, "a")
@@ -26,14 +36,18 @@ local function postProgress(data)
     local ltn12 = require("ltn12")
     local body = JSON.encode(data)
     local response = {}
+    local apiKey = loadApiKey()
+
+    local headers = {
+        ["Content-Type"] = "application/json",
+        ["Content-Length"] = tostring(#body),
+    }
+    if apiKey then headers["x-api-key"] = apiKey end
 
     local _, code = http.request{
         url = API_URL,
         method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#body),
-        },
+        headers = headers,
         source = ltn12.source.string(body),
         sink = ltn12.sink.table(response),
     }
@@ -51,6 +65,7 @@ local function getProgress(bookId, source)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
     local response = {}
+    local apiKey = loadApiKey()
 
     local url = API_URL .. "/" .. urlEncode(bookId)
     if source then
@@ -58,9 +73,13 @@ local function getProgress(bookId, source)
     end
     log("GET " .. url)
 
+    local headers = {}
+    if apiKey then headers["x-api-key"] = apiKey end
+
     local _, code = http.request{
         url = url,
         method = "GET",
+        headers = headers,
         sink = ltn12.sink.table(response),
     }
 
@@ -83,18 +102,22 @@ end
 local function uploadEpub(filepath, fileName)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
+    local apiKey = loadApiKey()
 
     -- Step 1: Get presigned URL
     local reqBody = JSON.encode({ fileName = fileName })
     local presignResponse = {}
 
+    local presignHeaders = {
+        ["Content-Type"] = "application/json",
+        ["Content-Length"] = tostring(#reqBody),
+    }
+    if apiKey then presignHeaders["x-api-key"] = apiKey end
+
     local _, presignCode = http.request{
         url = UPLOAD_URL,
         method = "POST",
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#reqBody),
-        },
+        headers = presignHeaders,
         source = ltn12.source.string(reqBody),
         sink = ltn12.sink.table(presignResponse),
     }
@@ -146,13 +169,16 @@ local function uploadEpub(filepath, fileName)
     })
     local confirmResponse = {}
 
+    local confirmHeaders = {
+        ["Content-Type"] = "application/json",
+        ["Content-Length"] = tostring(#confirmBody),
+    }
+    if apiKey then confirmHeaders["x-api-key"] = apiKey end
+
     local _, confirmCode = http.request{
         url = UPLOAD_URL,
         method = "PUT",
-        headers = {
-            ["Content-Type"] = "application/json",
-            ["Content-Length"] = tostring(#confirmBody),
-        },
+        headers = confirmHeaders,
         source = ltn12.source.string(confirmBody),
         sink = ltn12.sink.table(confirmResponse),
     }
@@ -419,6 +445,7 @@ function ReadingSync:onPageUpdate(pageno)
 end
 
 function ReadingSync:addToMainMenu(menu_items)
+    local InputDialog = require("ui/widget/inputdialog")
     menu_items.reading_sync = {
         text = "Reading Sync",
         sub_item_table = {
@@ -432,6 +459,50 @@ function ReadingSync:addToMainMenu(menu_items)
                 text = "Sync from mobile app",
                 callback = function()
                     self:syncFromMobile()
+                end,
+            },
+            {
+                text = "Set API key",
+                keep_menu_open = true,
+                callback = function()
+                    local current = loadApiKey() or ""
+                    local dialog
+                    dialog = InputDialog:new{
+                        title = "ReadingSync API Key",
+                        description = "Generate a key in the mobile app under Settings → Kindle API Key, then paste it here.",
+                        input = current,
+                        input_hint = "rs_k_...",
+                        buttons = {
+                            {
+                                {
+                                    text = "Cancel",
+                                    id = "close",
+                                    callback = function()
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                                {
+                                    text = "Save",
+                                    is_enter_default = true,
+                                    callback = function()
+                                        local key = dialog:getInputText()
+                                        local file = io.open(CONFIG_PATH, "w")
+                                        if file then
+                                            file:write(key)
+                                            file:close()
+                                            log("API key saved")
+                                            UIManager:show(InfoMessage:new{
+                                                text = "API key saved!",
+                                                timeout = 2,
+                                            })
+                                        end
+                                        UIManager:close(dialog)
+                                    end,
+                                },
+                            },
+                        },
+                    }
+                    UIManager:show(dialog)
                 end,
             },
         },

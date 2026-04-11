@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { eq, desc } from "drizzle-orm";
 import { db } from "~/server/db";
 import { readingProgress, syncHistory } from "~/server/db/schema";
+import { getSessionFromRequest } from "~/server/auth/helpers";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const all = await db.query.readingProgress.findMany({
     orderBy: [desc(readingProgress.updatedAt)],
   });
@@ -12,6 +18,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const session = await getSessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json() as {
     book_id: string;
     book_title?: string;

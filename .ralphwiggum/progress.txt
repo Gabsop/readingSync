@@ -292,6 +292,29 @@
   - Dependencies added: `expo-background-fetch`, `expo-task-manager`
   - TypeScript passes cleanly (mobile + backend)
 
+### Completed (continued 6)
+- [x] KOReader plugin update: auto-fetch on book open + auto-upload EPUB to R2
+  - **Auto-fetch on book open**: new `onReaderReady` hook fetches latest mobile progress via
+    `GET /api/progress/:bookId?source=mobile` when a book is opened on Kindle. If mobile has
+    newer progress, prompts user: "Continue from mobile app? (Page X/Y, N%)" with excerpt preview.
+    Uses excerpt-based text search for exact positioning, falls back to page number.
+  - **Auto-upload EPUB on first sync**: after every `POST /api/progress`, checks `has_epub` in
+    response body. If `false`, uploads the EPUB from Kindle filesystem to R2 via 3-step flow:
+    1. `POST /api/upload { fileName }` → get presigned URL
+    2. `PUT` to presigned URL with `ltn12.source.file()` for memory-efficient streaming
+    3. `PUT /api/upload { key, safeName }` → confirm upload in database
+    Shows "Uploading book to cloud..." notification. Non-blocking: failures retry on next sync.
+  - **409 handling**: `syncProgressSilent()` and `syncProgress()` now handle HTTP 409 from backend
+    (server has newer timestamp) — logs it, doesn't show error to user. Still checks `has_epub`
+    in 409 response to trigger upload if needed.
+  - **Backend**: 409 response now includes `has_epub: boolean` alongside stale status.
+  - **Refactored**: extracted `buildSyncPayload(self)` helper to eliminate code duplication between
+    `syncProgressSilent()` and `syncProgress()` (~150 lines of shared state collection)
+  - **Refactored**: extracted `navigateToRemote(self, remote)` helper for excerpt search + page
+    fallback navigation, shared between auto-fetch and manual sync-from-mobile
+  - **Renamed**: "Sync from web reader" → "Sync from mobile app" (web app is being retired per PRD)
+  - **Excerpt size**: increased from 150 to 500 chars per PRD spec for better cross-device matching
+
 ## M4 — Polish & Ship
 
 ### Completed

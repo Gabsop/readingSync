@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         incoming: timestamp.toISOString(),
       });
       return NextResponse.json(
-        { status: "stale", reason: "Server has a newer timestamp" },
+        { status: "stale", reason: "Server has a newer timestamp", has_epub: !!existing.epubUrl },
         { status: 409 },
       );
     }

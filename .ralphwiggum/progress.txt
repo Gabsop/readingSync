@@ -363,4 +363,26 @@
   - Utility `findTocEntryByHref()` added for TOC label lookup
   - TypeScript passes cleanly
 
+### Completed (continued 3)
+- [x] Offline storage management
+  - New `storage-manager.ts` module (`mobile/lib/storage-manager.ts`):
+    - `getStorageInfo(db)`: calculates disk usage for EPUBs (`Documents/books/`) and covers
+      (`Documents/covers/`) by walking directory trees, returns byte counts and book count
+    - `clearDownloadCache(db)`: deletes books and covers directories, recreates them empty,
+      clears `epub_path` and `cover_path` in SQLite (keeps book records for re-download)
+    - `formatBytes(bytes)`: human-readable size formatting (B, KB, MB, GB)
+  - New Settings screen (`mobile/app/settings.tsx`):
+    - iOS-native grouped table layout with rounded sections on gray background
+    - **Storage section**: shows total downloaded size, EPUB file count + size breakdown,
+      cover image size breakdown, each with Ionicons
+    - "Clear Download Cache" button with destructive red styling and confirmation alert
+    - Loading spinners while calculating sizes, disabled state when cache is empty
+    - Confirmation dialog explains what will be removed and that progress is preserved
+    - **About section**: app version
+    - Back navigation via chevron-back icon
+  - Settings route registered in root layout (`mobile/app/_layout.tsx`) with slide-from-right
+  - Gear icon added to Library tab header (`mobile/app/(tabs)/_layout.tsx`) next to the "+"
+    import button — navigates to `/settings`
+  - TypeScript passes cleanly
+
 ### Not Started

@@ -1,19 +1,29 @@
-import { Tabs } from "expo-router";
-import { Pressable } from "react-native";
+import { Tabs, useRouter } from "expo-router";
+import { Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSQLiteContext } from "expo-sqlite";
 import { importFromDocumentPicker } from "../../lib/book-import";
 
-function ImportButton() {
+function LibraryHeaderRight() {
   const db = useSQLiteContext();
+  const router = useRouter();
   return (
-    <Pressable
-      onPress={() => importFromDocumentPicker(db)}
-      hitSlop={8}
-      style={{ marginRight: 8 }}
-    >
-      <Ionicons name="add" size={28} color="#007AFF" />
-    </Pressable>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+      <Pressable
+        onPress={() => router.push("/settings")}
+        hitSlop={8}
+        style={{ marginRight: 4 }}
+      >
+        <Ionicons name="settings-outline" size={22} color="#007AFF" />
+      </Pressable>
+      <Pressable
+        onPress={() => importFromDocumentPicker(db)}
+        hitSlop={8}
+        style={{ marginRight: 8 }}
+      >
+        <Ionicons name="add" size={28} color="#007AFF" />
+      </Pressable>
+    </View>
   );
 }
 
@@ -37,7 +47,7 @@ export default function TabsLayout() {
         name="library"
         options={{
           title: "Library",
-          headerRight: () => <ImportButton />,
+          headerRight: () => <LibraryHeaderRight />,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="library" size={size} color={color} />
           ),

@@ -55,6 +55,12 @@ export default function RootLayout() {
                   gestureEnabled: false,
                 }}
               />
+              <Stack.Screen
+                name="settings"
+                options={{
+                  animation: "slide_from_right",
+                }}
+              />
             </Stack>
           </SyncProvider>
         </SQLiteProvider>

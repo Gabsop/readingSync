@@ -1,10 +1,15 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SQLiteProvider } from "expo-sqlite";
-import { Suspense } from "react";
+import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
+import { Suspense, useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { DB_NAME, initializeDatabase } from "../db";
+import {
+  registerAppStateSync,
+  unregisterAppStateSync,
+} from "../lib/sync-engine";
+import { registerBackgroundSync } from "../lib/background-sync";
 
 function LoadingFallback() {
   return (
@@ -12,6 +17,21 @@ function LoadingFallback() {
       <ActivityIndicator size="large" />
     </View>
   );
+}
+
+function SyncProvider({ children }: { children: React.ReactNode }) {
+  const db = useSQLiteContext();
+
+  useEffect(() => {
+    registerAppStateSync(db);
+    registerBackgroundSync().catch(() => {});
+
+    return () => {
+      unregisterAppStateSync();
+    };
+  }, [db]);
+
+  return <>{children}</>;
 }
 
 export default function RootLayout() {
@@ -23,18 +43,20 @@ export default function RootLayout() {
           onInit={initializeDatabase}
           useSuspense
         >
-          <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="login" />
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen
-              name="read/[bookId]"
-              options={{
-                animation: "slide_from_right",
-                gestureEnabled: false,
-              }}
-            />
-          </Stack>
+          <SyncProvider>
+            <StatusBar style="auto" />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="login" />
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="read/[bookId]"
+                options={{
+                  animation: "slide_from_right",
+                  gestureEnabled: false,
+                }}
+              />
+            </Stack>
+          </SyncProvider>
         </SQLiteProvider>
       </Suspense>
     </GestureHandlerRootView>

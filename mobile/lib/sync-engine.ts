@@ -3,8 +3,13 @@
  *
  * Push flow: page turn → save to SQLite → enqueue to sync_queue → flush to API
  * Pull flow: book open → fetch remote progress → compare with local → resolve
+ *
+ * Offline-first: all writes go to local SQLite first. The sync queue flushes
+ * when connectivity is available. Deferred items (409 from server) wait for a
+ * fresh page turn to generate a new timestamp.
  */
 
+import { AppState, type AppStateStatus } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import type { SQLiteDatabase } from "expo-sqlite";
 import { authFetch } from "./api";
@@ -24,7 +29,6 @@ export async function getDeviceId() {
     return stored;
   }
 
-  // Generate a random ID: 16 random bytes as hex (32 chars)
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   const id = Array.from(bytes)
@@ -59,9 +63,9 @@ export async function enqueueSync(db: SQLiteDatabase, payload: SyncPayload) {
   const deviceId = await getDeviceId();
   const timestamp = new Date().toISOString();
 
-  // Coalesce: remove any pending entries for this book (only latest matters)
+  // Coalesce: remove any pending/deferred entries for this book (only latest matters)
   await db.runAsync(
-    `DELETE FROM sync_queue WHERE book_id = ? AND status = 'pending'`,
+    `DELETE FROM sync_queue WHERE book_id = ? AND status IN ('pending', 'deferred')`,
     [payload.bookId],
   );
 
@@ -135,22 +139,25 @@ export async function flushSyncQueue(db: SQLiteDatabase) {
           }),
         });
 
+        if (res.status === 409) {
+          // Server has a newer timestamp — mark as deferred.
+          // The next page turn generates a fresh timestamp that will succeed.
+          await db.runAsync(
+            `UPDATE sync_queue SET status = 'deferred' WHERE id = ?`,
+            [item.id],
+          );
+          continue;
+        }
+
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
 
-        const json = (await res.json()) as { status: string };
-
-        if (json.status === "ok" || json.status === "skipped") {
-          // "skipped" means server has a newer timestamp — our push is stale.
-          // Either way, mark as synced (don't retry stale data).
-          await db.runAsync(
-            `UPDATE sync_queue SET status = 'synced' WHERE id = ?`,
-            [item.id],
-          );
-        }
+        await db.runAsync(
+          `UPDATE sync_queue SET status = 'synced' WHERE id = ?`,
+          [item.id],
+        );
       } catch {
-        // Network error or server error — increment retry count
         const newRetryCount = item.retry_count + 1;
         if (newRetryCount >= MAX_RETRY_COUNT) {
           await db.runAsync(
@@ -166,9 +173,9 @@ export async function flushSyncQueue(db: SQLiteDatabase) {
       }
     }
 
-    // Clean up old synced/failed entries (keep last 24h for debugging)
+    // Clean up old synced/failed/deferred entries (keep last 24h for debugging)
     await db.runAsync(
-      `DELETE FROM sync_queue WHERE status IN ('synced', 'failed') AND created_at < datetime('now', '-1 day')`,
+      `DELETE FROM sync_queue WHERE status IN ('synced', 'failed', 'deferred') AND created_at < datetime('now', '-1 day')`,
     );
   } finally {
     isFlushing = false;
@@ -230,7 +237,6 @@ export async function fetchRemoteProgress(
       updatedAt: json.updated_at,
     };
   } catch {
-    // Network unavailable — offline is fine, just skip
     return null;
   }
 }
@@ -250,7 +256,6 @@ export async function resolveProgressOnOpen(
 } | null> {
   const deviceId = await getDeviceId();
 
-  // Load local progress
   const local = await db.getFirstAsync<{
     progress: number;
     updated_at: string;
@@ -261,14 +266,11 @@ export async function resolveProgressOnOpen(
     [bookId],
   );
 
-  // Fetch remote
   const remote = await fetchRemoteProgress(bookId);
   if (!remote) {
-    // Offline or no remote record — use local
     return { action: "use_local" };
   }
 
-  // No local position — use remote if available
   if (!local) {
     return {
       action: "use_remote",
@@ -279,28 +281,23 @@ export async function resolveProgressOnOpen(
 
   const localUpdatedAt = Math.floor(new Date(local.updated_at).getTime() / 1000);
 
-  // Same device — remote is just our own echo, use local
   if (remote.deviceId === deviceId && remote.source === "mobile") {
     return { action: "use_local" };
   }
 
-  // Remote is older — use local
   if (remote.updatedAt <= localUpdatedAt) {
     return { action: "use_local" };
   }
 
-  // Remote is newer — check staleness (7 day threshold)
   const STALENESS_THRESHOLD_SECONDS = 7 * 24 * 60 * 60;
   const now = Math.floor(Date.now() / 1000);
   if (now - remote.updatedAt > STALENESS_THRESHOLD_SECONDS) {
     return { action: "use_local" };
   }
 
-  // Remote is newer and fresh — check distance
   const progressDiff = Math.abs(remote.progress - local.progress);
 
   if (progressDiff < 0.05) {
-    // Close enough — silently apply remote
     return {
       action: "use_remote",
       remote,
@@ -309,7 +306,6 @@ export async function resolveProgressOnOpen(
     };
   }
 
-  // Significant difference — prompt the user
   return {
     action: "prompt",
     remote,
@@ -323,5 +319,39 @@ export function cancelPendingFlush() {
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
+  }
+}
+
+// --- App State Sync (foreground resume) ---
+
+let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+let registeredDb: SQLiteDatabase | null = null;
+
+/**
+ * Register an AppState listener that flushes the sync queue whenever the app
+ * returns to the foreground. Call once from the root layout.
+ */
+export function registerAppStateSync(db: SQLiteDatabase) {
+  if (appStateSubscription) return;
+  registeredDb = db;
+
+  appStateSubscription = AppState.addEventListener(
+    "change",
+    handleAppStateChange,
+  );
+}
+
+/** Unregister the AppState listener. Call on app teardown. */
+export function unregisterAppStateSync() {
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
+  }
+  registeredDb = null;
+}
+
+function handleAppStateChange(nextState: AppStateStatus) {
+  if (nextState === "active" && registeredDb) {
+    flushSyncQueue(registeredDb);
   }
 }

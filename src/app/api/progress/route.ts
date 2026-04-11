@@ -61,12 +61,15 @@ export async function POST(request: Request) {
           .set({ renderSettings: JSON.stringify(render_settings) })
           .where(eq(readingProgress.bookId, book_id));
       }
-      console.log("[sync POST] skipped position — local is newer, renderSettings updated:", !!render_settings, {
+      console.log("[sync POST] stale — server has newer position, renderSettings updated:", !!render_settings, {
         book_id,
-        local: existing.updatedAt.toISOString(),
+        server: existing.updatedAt.toISOString(),
         incoming: timestamp.toISOString(),
       });
-      return NextResponse.json({ status: "skipped", reason: "local is newer" });
+      return NextResponse.json(
+        { status: "stale", reason: "Server has a newer timestamp" },
+        { status: 409 },
+      );
     }
 
     await db
@@ -116,5 +119,7 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({ status: "ok" });
+  const hasEpub = existing ? !!existing.epubUrl : false;
+
+  return NextResponse.json({ status: "ok", has_epub: hasEpub });
 }

@@ -270,7 +270,27 @@
     (shared between auto-apply and user-picked-remote paths)
   - TypeScript passes cleanly
 
-### Not Started
+### Completed (continued 5)
+- [x] Offline queue with background sync + deferred push handling (409s)
+  - **Backend**: `POST /api/progress` now returns HTTP 409 (Conflict) for stale pushes instead of
+    200 with `{ status: "skipped" }`. Response body includes `{ status: "stale", reason }`.
+    RenderSettings still updated on stale pushes. Response now includes `has_epub: boolean` so
+    KOReader plugin knows whether to upload the EPUB file.
+  - **Sync engine**: 409 responses mark sync_queue entries as `"deferred"` instead of retrying.
+    Deferred items are cleared when the next page turn generates a fresh timestamp (coalesce
+    deletes pending + deferred entries for the same book). Network errors still retry with
+    exponential backoff (max 5 attempts).
+  - **App foreground resume sync**: `registerAppStateSync(db)` listens to `AppState` changes
+    and flushes the sync queue whenever the app returns to foreground (`"active"` state).
+    Registered in root layout via `SyncProvider` component inside `SQLiteProvider`.
+  - **Background sync**: New `background-sync.ts` module using `expo-background-fetch` +
+    `expo-task-manager`. Background task opens its own SQLite connection, processes up to 10
+    pending items, handles 409 as deferred. Registered with 15-minute minimum interval
+    (iOS minimum). `registerBackgroundSync()` called from root layout on mount.
+  - **Root layout**: New `SyncProvider` wrapper component inside `SQLiteProvider` that registers
+    both app-state sync and background sync on mount, and cleans up on unmount.
+  - Dependencies added: `expo-background-fetch`, `expo-task-manager`
+  - TypeScript passes cleanly (mobile + backend)
 
 ## M4 — Polish & Ship
 
@@ -283,6 +303,22 @@
   - Theme-aware styling: adapts background, text, and separator colors to reader theme
   - Wired to both the footer TOC icon and the controls overlay "Contents" button
   - `TocEntry` type exported from `epub-parser.ts` for reuse
+  - TypeScript passes cleanly
+
+### Completed (continued)
+- [x] Search within book
+  - New `searchBook()` function in `epub-parser.ts`: case-insensitive full-text search across
+    all spine chapters, finds all occurrences with ~60 chars of surrounding context
+  - New `SearchModal` component (`mobile/lib/search-modal.tsx`): full-screen overlay with
+    debounced text input (400ms), result list with chapter labels and highlighted match text
+  - Results show chapter name (from TOC), context snippet with bold+accent-colored match,
+    and chevron indicator for navigation
+  - Tap result navigates to the matched chapter and estimated page position
+  - Empty state, searching spinner, and "no results" states with themed icons
+  - Theme-aware: adapts background, input field, text colors, and status bar for dark/light
+  - Wired into reader screen: controls overlay "Search Book" button opens modal
+  - `keyboardShouldPersistTaps="handled"` for smooth result selection while keyboard is open
+  - Auto-focuses search input on modal open, resets state on close
   - TypeScript passes cleanly
 
 ### Not Started

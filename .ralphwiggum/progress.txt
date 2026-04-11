@@ -344,4 +344,23 @@
   - Auto-focuses search input on modal open, resets state on close
   - TypeScript passes cleanly
 
+### Completed (continued 2)
+- [x] Page scrubber (bottom slider)
+  - New `PageScrubber` component (`mobile/lib/page-scrubber.tsx`): horizontal slider for quick
+    navigation through the entire book
+  - Draggable thumb with animated fill track showing current position
+  - Floating label appears on scrub: shows "N of M  ·  Chapter Name" with tooltip arrow
+  - Chapter name resolution: recursively searches TOC tree to find label for spine href
+  - Light haptic feedback on each page change during scrub
+  - Theme-aware: adapts thumb, track fill, and label colors for dark/light themes
+  - Returns null (hidden) when book has 1 page or fewer
+  - Pan gesture with 20px hit slop for easy thumb acquisition
+  - Integrated into `ControlsOverlay` below the action row
+  - Reader screen provides `getChapterNameForPage()` and `handleScrubEnd()`:
+    - Maps global page to chapter + page-within-chapter
+    - Navigates to correct chapter with `pendingRestorePageRef` for cross-chapter jumps
+    - Same-chapter scrubs scroll directly without chapter reload
+  - Utility `findTocEntryByHref()` added for TOC label lookup
+  - TypeScript passes cleanly
+
 ### Not Started

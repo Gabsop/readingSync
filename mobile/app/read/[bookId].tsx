@@ -49,6 +49,21 @@ import {
 import { SyncConflictPicker } from "../../lib/sync-conflict-picker";
 import { SearchModal } from "../../lib/search-modal";
 
+/** Find a TOC entry label matching a spine href (searching the tree recursively). */
+function findTocEntryByHref(toc: TocEntry[], href: string): string | null {
+  for (const entry of toc) {
+    const entryBase = entry.href.split("#")[0];
+    if (href === entryBase || href.endsWith("/" + entryBase)) {
+      return entry.label;
+    }
+    if (entry.children?.length) {
+      const found = findTocEntryByHref(entry.children, href);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // Gesture thresholds
 const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
 const SWIPE_VELOCITY_THRESHOLD = 500; // px/s — fast flick triggers regardless of distance
@@ -673,6 +688,51 @@ export default function ReaderScreen() {
       }
     });
 
+  /** Resolve a global page number to the chapter name it falls in. */
+  function getChapterNameForPage(page: number) {
+    const epub = epubRef.current;
+    if (!epub) return "";
+    const counts = chapterPageCountsRef.current;
+    let accumulated = 0;
+    for (let i = 0; i < totalChapters; i++) {
+      accumulated += counts.get(i) ?? 1;
+      if (page <= accumulated) {
+        const toc = epub.toc;
+        const spineHref = epub.spine[i]?.href;
+        if (toc && spineHref) {
+          const entry = findTocEntryByHref(toc, spineHref);
+          if (entry) return entry;
+        }
+        return `Chapter ${i + 1}`;
+      }
+    }
+    return "";
+  }
+
+  /** Navigate to a specific global page via scrubber. */
+  function handleScrubEnd(page: number) {
+    const counts = chapterPageCountsRef.current;
+    let accumulated = 0;
+    for (let i = 0; i < totalChapters; i++) {
+      const chapterPages = counts.get(i) ?? 1;
+      if (page <= accumulated + chapterPages) {
+        const pageWithinChapter = page - accumulated - 1;
+        userHasNavigatedRef.current = true;
+        if (i === currentChapter) {
+          const target = Math.max(0, pageWithinChapter);
+          scrollRef.current?.scrollTo({ y: target * pageHeight, animated: false });
+          setCurrentPage(target);
+        } else {
+          pendingRestorePageRef.current = Math.max(0, pageWithinChapter);
+          setCurrentChapter(i);
+        }
+        hapticTick();
+        return;
+      }
+      accumulated += chapterPages;
+    }
+  }
+
   const composedGesture = Gesture.Race(panGesture, tapGesture);
 
   // Animated styles
@@ -761,6 +821,10 @@ export default function ReaderScreen() {
             ? Math.round((globalPage / globalTotalPages) * 100)
             : 0
         }
+        globalPage={globalPage}
+        globalTotalPages={globalTotalPages}
+        getChapterNameForPage={getChapterNameForPage}
+        onScrubEnd={handleScrubEnd}
         onOpenSettings={() => {
           setControlsVisible(false);
           setSettingsVisible(true);

@@ -18,6 +18,7 @@ import Animated, {
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import type { ReaderTheme } from "./reader-settings";
+import { PageScrubber } from "./page-scrubber";
 
 const FADE_DURATION = 200;
 
@@ -26,6 +27,10 @@ interface ControlsOverlayProps {
   theme: ReaderTheme;
   pagesLeftInChapter: number;
   progressPercent: number;
+  globalPage: number;
+  globalTotalPages: number;
+  getChapterNameForPage: (page: number) => string;
+  onScrubEnd: (page: number) => void;
   onOpenSettings: () => void;
   onOpenContents: () => void;
   onOpenSearch: () => void;
@@ -47,6 +52,10 @@ export function ControlsOverlay({
   theme,
   pagesLeftInChapter,
   progressPercent,
+  globalPage,
+  globalTotalPages,
+  getChapterNameForPage,
+  onScrubEnd,
   onOpenSettings,
   onOpenContents,
   onOpenSearch,
@@ -179,6 +188,16 @@ export function ControlsOverlay({
             <Ionicons name="bookmark-outline" size={22} color={iconColor} />
           </Pressable>
         </BlurView>
+
+        {/* Page scrubber */}
+        <PageScrubber
+          globalPage={globalPage}
+          globalTotalPages={globalTotalPages}
+          theme={theme}
+          dark={dark}
+          getChapterNameForPage={getChapterNameForPage}
+          onScrubEnd={onScrubEnd}
+        />
       </View>
     </Animated.View>
   );

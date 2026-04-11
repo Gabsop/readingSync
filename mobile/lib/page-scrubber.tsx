@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, LayoutChangeEvent } from "react-native";
+import { View, Text, StyleSheet, type LayoutChangeEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,

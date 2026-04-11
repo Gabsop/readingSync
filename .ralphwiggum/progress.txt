@@ -385,4 +385,37 @@
     import button — navigates to `/settings`
   - TypeScript passes cleanly
 
+### Completed (continued 4)
+- [x] Backend cleanup: remove tRPC, web reader
+  - **Deleted tRPC layer** (7 files):
+    - `src/trpc/react.tsx` — TRPCReactProvider, client hooks
+    - `src/trpc/server.ts` — RSC prefetch helpers, HydrateClient
+    - `src/trpc/query-client.ts` — React Query + SuperJSON config
+    - `src/server/api/trpc.ts` — initTRPC, context, procedures
+    - `src/server/api/root.ts` — appRouter composition
+    - `src/server/api/routers/progress.ts` — progressRouter (tRPC mutations/queries)
+    - `src/app/api/trpc/[trpc]/route.ts` — tRPC HTTP handler
+  - **Deleted web reader** (4 files):
+    - `src/app/_components/epub-reader.tsx` — epub.js reader component
+    - `src/app/_components/book-list.tsx` — library UI with upload/link
+    - `src/app/_components/epub-upload.tsx` — upload form
+    - `src/app/read/[bookId]/page.tsx` — reader page route
+  - **Deleted stale client** (1 file):
+    - `src/lib/auth-client.ts` — better-auth client (only used by deleted web components)
+  - **Updated layout** (`src/app/layout.tsx`): removed TRPCReactProvider wrapper, Geist font,
+    cleaned up metadata to "ReadingSync" API server
+  - **Replaced home page** (`src/app/page.tsx`): minimal API status page listing endpoints
+  - **Removed 7 dependencies** from `package.json`:
+    - `@trpc/client`, `@trpc/react-query`, `@trpc/server` (tRPC)
+    - `@tanstack/react-query` (React Query, only used by tRPC client)
+    - `epubjs` (web EPUB reader)
+    - `superjson` (tRPC serialization)
+    - `server-only` (only used by tRPC RSC helpers)
+  - **Kept intact**: REST API routes (`/api/progress`, `/api/upload`, `/api/auth`), Drizzle/DB,
+    R2 storage, better-auth, all KOReader plugin and mobile app code
+  - Fixed type import in `page-scrubber.tsx` (`LayoutChangeEvent` → type-only import)
+  - Lockfile regenerated via `pnpm install`
+  - Backend is now a lean REST API server: 14 source files, zero web UI
+  - TypeScript passes cleanly (only pre-existing `search-modal.tsx` error remains)
+
 ### Not Started

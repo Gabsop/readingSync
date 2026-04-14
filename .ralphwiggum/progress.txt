@@ -613,3 +613,51 @@
     with task identifier
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+### M5 — Polish
+
+#### Completed
+- [x] Controls overlay with toolbar and action row
+  - New `ControlsOverlay.swift` in EpubReader package: Apple Books-style bottom overlay
+  - Three-row toolbar with `.ultraThinMaterial` background and rounded corners:
+    - "Contents · N%" with list icon (placeholder action for TOC sheet)
+    - "Search Book" with magnifying glass icon (placeholder action for search)
+    - "Themes & Settings" with Aa icon (placeholder action for settings sheet)
+  - Action button row: share, display, lock, bookmark icons in material-backed bar
+  - `ReaderViewModel.progressPercent` computed property from Readium Locator
+  - `ReaderView.controlsOverlay()` replaced inline capsule with full `ControlsOverlay` component
+  - Toolbar buttons use closures for future wiring to TOC/search/settings sheets
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Table of contents sheet (TOC navigation)
+  - New `TOCSheet.swift` in EpubReader package: sheet presenting chapter list from
+    `Publication.manifest.tableOfContents` with nested entry support
+  - Flattens nested `Link` tree with depth-based indentation (20pt per level)
+  - Current chapter highlighted with accent color and dot indicator (matches href)
+  - Tap to navigate: creates `Locator` from selected `Link` href/mediaType, sets
+    `vm.navigateTo` binding which triggers `PageCurlController.go(to:)` navigation
+  - NavigationStack with "Contents" title and "Done" dismiss button
+  - Wired to ControlsOverlay "Contents" button via `onOpenContents` closure and
+    `.sheet(isPresented: $showTOC)` on the reader ZStack
+  - Disambiguated `ReadiumShared.Link` vs `SwiftUI.Link` throughout
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Search within book
+  - New `SearchSheet.swift` in EpubReader package: full-text search using Readium `SearchService`
+  - Async paginated search via `publication.search(query:)` and `SearchIterator.next()`
+  - Search results displayed in a List with highlighted match text and context snippets
+    (`Locator.Text.before` / `highlight` / `after` with styled Text concatenation)
+  - Chapter title shown above each result for context
+  - Tap result navigates to exact location via `vm.navigateTo = locator`
+  - `.searchable` modifier with submit-on-enter; clears results when query emptied
+  - Loading overlay with "Searching…" indicator during async search
+  - Empty states: initial prompt (magnifyingglass icon) and no-results (ContentUnavailableView.search)
+  - Search task cancellation on new query or empty input
+  - Wired to ControlsOverlay "Search Book" button via `onOpenSearch` closure and
+    `.sheet(isPresented: $showSearch)` on the reader ZStack
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing

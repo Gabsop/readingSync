@@ -1,5 +1,6 @@
 import ReadiumNavigator
 import SwiftUI
+import UIKit
 
 // MARK: - Reader Preferences Model
 
@@ -247,10 +248,12 @@ enum ReaderTextAlign: String, CaseIterable {
 struct SettingsSheet: View {
     @Bindable var preferences: ReaderPreferences
     var onPreferencesChanged: () -> Void
+    @State private var brightness: Double = Double(UIScreen.main.brightness)
 
     var body: some View {
         NavigationStack {
             List {
+                brightnessSection
                 themeSection
                 fontSizeSection
                 fontFamilySection
@@ -267,6 +270,29 @@ struct SettingsSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Brightness
+
+    @ViewBuilder
+    private var brightnessSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "sun.min")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14))
+
+                Slider(value: $brightness, in: 0...1)
+                    .onChange(of: brightness) {
+                        UIScreen.main.brightness = CGFloat(brightness)
+                    }
+
+                Image(systemName: "sun.max")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 18))
+            }
+            .padding(.vertical, 2)
+        }
     }
 
     // MARK: - Theme

@@ -7,7 +7,15 @@ let package = Package(
     products: [
         .library(name: "Persistence", targets: ["Persistence"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+    ],
     targets: [
-        .target(name: "Persistence"),
+        .target(
+            name: "Persistence",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ]
+        ),
     ]
 )

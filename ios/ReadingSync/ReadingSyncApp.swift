@@ -1,5 +1,6 @@
 import SwiftUI
 import SyncCore
+import Persistence
 import LibraryUI
 import EpubReader
 
@@ -12,11 +13,21 @@ struct ReadingSyncApp: App {
     #endif
 
     @State private var apiClient = APIClient(baseURL: serverURL)
+    private let database: AppDatabase
+
+    init() {
+        do {
+            database = try AppDatabase.makeDefault()
+        } catch {
+            fatalError("Failed to initialize database: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
             AppRoot()
                 .environment(apiClient)
+                .environment(\.appDatabase, database)
         }
     }
 }

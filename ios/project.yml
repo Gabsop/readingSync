@@ -29,6 +29,7 @@ targets:
       - ReadingSync
     dependencies:
       - package: SyncCore
+      - package: Persistence
       - package: LibraryUI
       - package: EpubReader
     settings:

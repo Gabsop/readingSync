@@ -1,4 +1,5 @@
 import OSLog
+import Persistence
 import ReadiumShared
 import SyncCore
 import SwiftUI
@@ -17,19 +18,20 @@ final class ReaderViewModel {
     private let entry: ProgressEntry
     private let loader: EpubLoader
     private let token: String?
+    private let database: AppDatabase
 
-    private static let positionKeyPrefix = "reader.position."
-
-    init(entry: ProgressEntry, token: String?) {
+    init(entry: ProgressEntry, token: String?, database: AppDatabase) {
         self.entry = entry
         self.loader = EpubLoader()
         self.token = token
+        self.database = database
     }
 
     var title: String { entry.displayTitle }
 
     var savedLocator: Locator? {
-        guard let json = UserDefaults.standard.string(forKey: Self.positionKeyPrefix + entry.bookId) else {
+        guard let record = try? database.readingPosition(for: entry.bookId),
+              let json = record.position else {
             return nil
         }
         return try? Locator(jsonString: json)
@@ -59,8 +61,17 @@ final class ReaderViewModel {
 
     func savePosition(_ locator: Locator) {
         currentLocator = locator
-        if let json = locator.jsonString {
-            UserDefaults.standard.set(json, forKey: Self.positionKeyPrefix + entry.bookId)
+        let record = ReadingPositionRecord(
+            bookId: entry.bookId,
+            position: locator.jsonString,
+            progress: locator.locations.totalProgression,
+            updatedAt: Int(Date().timeIntervalSince1970),
+            source: "ios"
+        )
+        do {
+            try database.saveReadingPosition(record)
+        } catch {
+            logger.error("Failed to save position: \(error)")
         }
     }
 
@@ -73,6 +84,7 @@ public struct ReaderView: View {
     @State private var viewModel: ReaderViewModel?
     private let entry: ProgressEntry
     @Environment(APIClient.self) private var apiClient
+    @Environment(\.appDatabase) private var database
 
     public init(entry: ProgressEntry) {
         self.entry = entry
@@ -91,7 +103,8 @@ public struct ReaderView: View {
         .statusBarHidden(viewModel?.publication != nil && !(viewModel?.showControls ?? true))
         .ignoresSafeArea(.all, edges: .bottom)
         .task {
-            let vm = ReaderViewModel(entry: entry, token: apiClient.token)
+            guard let database else { return }
+            let vm = ReaderViewModel(entry: entry, token: apiClient.token, database: database)
             viewModel = vm
             await vm.load()
         }

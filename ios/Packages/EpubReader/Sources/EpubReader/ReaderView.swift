@@ -31,10 +31,10 @@ final class ReaderViewModel {
 
     var savedLocator: Locator? {
         guard let record = try? database.readingPosition(for: entry.bookId),
-              let json = record.position else {
+              let position = record.position else {
             return nil
         }
-        return try? Locator(jsonString: json)
+        return LocatorMapper.toLocator(position)
     }
 
     func load() async {
@@ -63,7 +63,7 @@ final class ReaderViewModel {
         currentLocator = locator
         let record = ReadingPositionRecord(
             bookId: entry.bookId,
-            position: locator.jsonString,
+            position: LocatorMapper.toCFIString(locator),
             progress: locator.locations.totalProgression,
             updatedAt: Int(Date().timeIntervalSince1970),
             source: "ios"

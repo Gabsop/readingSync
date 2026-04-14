@@ -175,6 +175,7 @@ final class ReaderViewModel {
 public struct ReaderView: View {
     @State private var viewModel: ReaderViewModel?
     @State private var showTOC = false
+    @State private var showSearch = false
     private let entry: ProgressEntry
     @Environment(APIClient.self) private var apiClient
     @Environment(\.appDatabase) private var database
@@ -267,6 +268,13 @@ public struct ReaderView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showSearch) {
+                if let publication = vm.publication {
+                    SearchSheet(publication: publication) { locator in
+                        vm.navigateTo = locator
+                    }
+                }
+            }
         }
     }
 
@@ -274,7 +282,8 @@ public struct ReaderView: View {
     private func controlsOverlay(_ vm: ReaderViewModel) -> some View {
         ControlsOverlay(
             progressPercent: vm.progressPercent,
-            onOpenContents: { showTOC = true }
+            onOpenContents: { showTOC = true },
+            onOpenSearch: { showSearch = true }
         )
     }
 

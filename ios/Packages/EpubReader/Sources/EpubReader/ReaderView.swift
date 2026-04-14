@@ -16,6 +16,7 @@ final class ReaderViewModel {
     var currentLocator: Locator?
     var navigateTo: Locator?
     var conflictState: ConflictState?
+    let readerPreferences = ReaderPreferences()
 
     struct ConflictState {
         let remote: RemoteProgress
@@ -176,6 +177,7 @@ public struct ReaderView: View {
     @State private var viewModel: ReaderViewModel?
     @State private var showTOC = false
     @State private var showSearch = false
+    @State private var showSettings = false
     private let entry: ProgressEntry
     @Environment(APIClient.self) private var apiClient
     @Environment(\.appDatabase) private var database
@@ -235,6 +237,7 @@ public struct ReaderView: View {
                 EPUBNavigatorView(
                     publication: publication,
                     initialLocation: vm.savedLocator,
+                    preferences: vm.readerPreferences.epubPreferences,
                     navigateTo: Binding(
                         get: { vm.navigateTo },
                         set: { vm.navigateTo = $0 }
@@ -275,6 +278,12 @@ public struct ReaderView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showSettings) {
+                SettingsSheet(
+                    preferences: vm.readerPreferences,
+                    onPreferencesChanged: {}
+                )
+            }
         }
     }
 
@@ -283,7 +292,8 @@ public struct ReaderView: View {
         ControlsOverlay(
             progressPercent: vm.progressPercent,
             onOpenContents: { showTOC = true },
-            onOpenSearch: { showSearch = true }
+            onOpenSearch: { showSearch = true },
+            onOpenSettings: { showSettings = true }
         )
     }
 

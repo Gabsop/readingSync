@@ -28,9 +28,12 @@ final class PageCurlController: UIViewController {
     var onLocationChanged: ((Locator) -> Void)?
     var onTap: (() -> Void)?
 
-    init(publication: Publication, initialLocation: Locator?) {
+    private(set) var currentPreferences: EPUBPreferences
+
+    init(publication: Publication, initialLocation: Locator?, preferences: EPUBPreferences = .empty) {
         self.publication = publication
         self.initialLocation = initialLocation
+        self.currentPreferences = preferences
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -43,7 +46,7 @@ final class PageCurlController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
 
-        let config = EPUBNavigatorViewController.Configuration()
+        let config = EPUBNavigatorViewController.Configuration(preferences: currentPreferences)
         navigator = try! EPUBNavigatorViewController(
             publication: publication,
             initialLocation: initialLocation,
@@ -95,6 +98,16 @@ final class PageCurlController: UIViewController {
 
     @objc private func handleTap() {
         onTap?()
+    }
+
+    func updatePreferences(_ preferences: EPUBPreferences) async {
+        currentPreferences = preferences
+        navigator.submitPreferences(preferences)
+        try? await Task.sleep(for: .milliseconds(400))
+        let snapshot = captureSnapshot()
+        let page = PageSnapshotVC(snapshot: snapshot, direction: .current)
+        pageVC.setViewControllers([page], direction: .forward, animated: false)
+        await preloadAdjacentSnapshots()
     }
 
     func go(to locator: Locator) async {

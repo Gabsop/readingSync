@@ -699,3 +699,14 @@
   - Smooth animations on thumb size and label appearance (0.15s easeOut)
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Brightness control in settings sheet
+  - Brightness slider added to `SettingsSheet.swift` as the first section (above theme)
+  - Sun icons (sun.min / sun.max) on either side of the slider for visual context
+  - Uses `UIScreen.main.brightness` to read current system brightness on sheet open
+  - Slider changes apply immediately to system brightness via `.onChange(of:)` modifier
+  - No persistence needed — controls the system-level brightness directly
+  - Matches Apple Books brightness slider UX (unlabeled section, icon-flanked slider)
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing

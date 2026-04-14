@@ -551,6 +551,53 @@
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
 
-#### Not Started
-- [ ] Map Readium Locator ↔ EPUB CFI for position field
-- [ ] Port resolveProgressOnOpen (use_local / use_remote / prompt)
+#### Completed (continued)
+- [x] Map Readium Locator ↔ EPUB CFI for position field
+  - New `LocatorMapper.swift` in EpubReader package: bidirectional conversion between
+    Readium `Locator` and compact CFI-based JSON position string
+  - `CFIPosition` struct: stores `href`, `type` (media type), `cfi` (EPUB CFI fragment),
+    `progression` (intra-resource), and `totalProgression` (whole-book progress)
+  - `toCFIString(_:)`: extracts CFI fragment from `Locator.locations.fragments`, serializes
+    compact JSON (~100 bytes vs ~300+ for full Locator JSON)
+  - `toLocator(_:)`: reconstructs `Locator` from compact JSON with proper `AnyURL` href
+    and `MediaType`; falls back to full Readium Locator JSON for backward compatibility
+  - `ReaderViewModel.savePosition()` now stores compact CFI format via `LocatorMapper`
+  - `ReaderViewModel.savedLocator` restores via `LocatorMapper.toLocator()` with fallback
+  - Position format is cross-client compatible: KOReader can produce matching CFI + href
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Port resolveProgressOnOpen (use_local / use_remote / prompt)
+  - **SyncEngine injected at app level**: `ReadingSyncApp` creates `SyncEngine` with shared
+    `AppDatabase` + `APIClient`, passes via `.environment(syncEngine)` to entire view tree
+  - **Reader sync resolution**: `ReaderViewModel.resolveSync()` called after EPUB loads,
+    calls `SyncEngine.resolveProgressOnOpen(bookId:)` and handles all three cases:
+    - `.useLocal`: no action (keeps saved locator)
+    - `.useRemote`: converts `RemoteProgress.position` CFI to Readium `Locator` via
+      `LocatorMapper.toLocator()`, navigates reader programmatically, updates local DB
+    - `.prompt`: shows `syncConflictOverlay` — material-backed card with two tappable options
+      (This Device vs Kindle/Other), each showing source icon and progress percentage
+  - **Programmatic navigation**: `PageCurlController.go(to:)` navigates Readium navigator,
+    refreshes page snapshot and preloads adjacent pages for curl animation continuity
+  - **`EPUBNavigatorView` binding**: new `@Binding var navigateTo: Locator?` triggers
+    `go(to:)` via `updateUIViewController` for SwiftUI-driven navigation after initial load
+  - **Push sync on page turn**: `savePosition()` now enqueues sync via `SyncEngine.enqueueSync()`
+    with CFI position and progress percentage on every location change
+  - **User navigation suppression**: `userHasNavigated` flag prevents late-arriving sync
+    results from overriding manual navigation (matches RN behavior)
+  - **Cleanup on unmount**: `onDisappear` cancels pending flush and fires final sync
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+### M4 — Offline + background sync
+
+#### Completed
+- [x] Foreground resume sync flush via ScenePhase
+  - `ReadingSyncApp` monitors `@Environment(\.scenePhase)` for app lifecycle transitions
+  - `.onChange(of: scenePhase)` triggers `syncEngine.flush()` when transitioning to `.active`
+    from any non-active state (background/inactive → foreground)
+  - Matches RN behavior: `AppState` listener flushed sync queue on foreground resume
+  - Ensures offline-queued progress pushes are flushed as soon as connectivity is likely restored
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing

@@ -28,12 +28,21 @@ struct ReadingSyncApp: App {
         }
     }
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             AppRoot()
                 .environment(apiClient)
                 .environment(syncEngine)
                 .environment(\.appDatabase, database)
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            if newPhase == .active && oldPhase != .active {
+                Task { @MainActor in
+                    await syncEngine.flush()
+                }
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import BackgroundTasks
 import SyncCore
 import Persistence
 import LibraryUI
@@ -12,6 +13,8 @@ struct ReadingSyncApp: App {
     private static let serverURL = URL(string: "https://readingsync.example.com")!
     #endif
 
+    private static let bgTaskIdentifier = "com.readingsync.sync-refresh"
+
     @State private var apiClient = APIClient(baseURL: serverURL)
     private let database: AppDatabase
     @State private var syncEngine: SyncEngine
@@ -22,7 +25,9 @@ struct ReadingSyncApp: App {
             database = db
             let client = APIClient(baseURL: Self.serverURL)
             _apiClient = State(initialValue: client)
-            _syncEngine = State(initialValue: SyncEngine(database: db, apiClient: client))
+            let engine = SyncEngine(database: db, apiClient: client)
+            _syncEngine = State(initialValue: engine)
+            Self.registerBackgroundTask(syncEngine: engine)
         } catch {
             fatalError("Failed to initialize database: \(error)")
         }
@@ -43,6 +48,45 @@ struct ReadingSyncApp: App {
                     await syncEngine.flush()
                 }
             }
+            if newPhase == .background {
+                Self.scheduleBackgroundRefresh()
+            }
+        }
+    }
+
+    private static func registerBackgroundTask(syncEngine: SyncEngine) {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: bgTaskIdentifier,
+            using: nil
+        ) { task in
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            handleBackgroundRefresh(refreshTask, syncEngine: syncEngine)
+        }
+    }
+
+    private static func scheduleBackgroundRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: bgTaskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private static func handleBackgroundRefresh(
+        _ task: BGAppRefreshTask,
+        syncEngine: SyncEngine
+    ) {
+        scheduleBackgroundRefresh()
+
+        let flushTask = Task { @MainActor in
+            await syncEngine.flush()
+            task.setTaskCompleted(success: true)
+        }
+
+        task.expirationHandler = {
+            flushTask.cancel()
+            task.setTaskCompleted(success: false)
         }
     }
 }

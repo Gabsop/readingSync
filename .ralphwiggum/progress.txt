@@ -601,3 +601,15 @@
   - Ensures offline-queued progress pushes are flushed as soon as connectivity is likely restored
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] BGAppRefreshTask for background sync
+  - Registered `com.readingsync.sync-refresh` background task in `ReadingSyncApp.init()`
+  - `BGAppRefreshTaskRequest` scheduled with 15-minute earliest begin date when app enters background
+  - Handler calls `SyncEngine.flush()` to process pending sync queue items
+  - Expiration handler cancels the flush task gracefully
+  - Re-schedules next refresh after each execution for continuous background sync
+  - Info.plist updated: `UIBackgroundModes` with `fetch`, `BGTaskSchedulerPermittedIdentifiers`
+    with task identifier
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing

@@ -684,3 +684,18 @@
     `.sheet(isPresented: $showSettings)` on the reader ZStack
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Page scrubber (bottom slider for quick navigation)
+  - New `Scrubber.swift` in EpubReader package: horizontal drag slider for scrubbing through book
+  - Thin track with filled portion showing current progress and draggable thumb (grows on touch)
+  - Floating label appears while scrubbing showing progress percentage in material capsule
+  - Drag gesture with clamped 0.0–1.0 range; on release navigates via `Publication.locate(progression:)`
+  - `ReaderViewModel.navigateToProgression()`: converts scrub value to Readium `Locator` using
+    `publication.locate(progression:)` and sets `navigateTo` binding for `PageCurlController` navigation
+  - `ReaderViewModel.totalProgression` and `currentChapterTitle` computed properties exposed
+  - Integrated into `ControlsOverlay` between toolbar and action row with horizontal padding
+  - `ControlsOverlay` accepts new `totalProgression`, `chapterTitle`, and `onScrub` parameters
+  - Smooth animations on thumb size and label appearance (0.15s easeOut)
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing

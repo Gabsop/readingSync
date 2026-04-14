@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ProgressEntry: Codable, Identifiable, Sendable {
+public struct ProgressEntry: Codable, Identifiable, Hashable, Sendable {
     public let id: Int
     public let bookId: String
     public let bookTitle: String?

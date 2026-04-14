@@ -8,7 +8,7 @@ private let logger = Logger(subsystem: "com.readingsync", category: "APIClient")
 public final class APIClient {
     public var isAuthenticated: Bool { token != nil }
 
-    private var token: String?
+    public private(set) var token: String?
     private let baseURL: URL
     private let keychain: KeychainStore
     private let session: URLSession

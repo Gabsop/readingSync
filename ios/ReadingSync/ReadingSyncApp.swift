@@ -1,6 +1,7 @@
 import SwiftUI
 import SyncCore
 import LibraryUI
+import EpubReader
 
 @main
 struct ReadingSyncApp: App {

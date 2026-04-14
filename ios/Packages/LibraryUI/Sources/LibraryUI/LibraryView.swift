@@ -87,6 +87,7 @@ public struct LibraryView: View {
 
     private func bookList(_ vm: LibraryViewModel) -> some View {
         List(vm.books) { entry in
+            NavigationLink(value: entry) {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(coverColor(for: entry.bookId))
@@ -119,6 +120,7 @@ public struct LibraryView: View {
                 }
             }
             .padding(.vertical, 4)
+            }
         }
         .refreshable {
             await vm.load()

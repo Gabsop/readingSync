@@ -30,6 +30,7 @@ targets:
     dependencies:
       - package: SyncCore
       - package: LibraryUI
+      - package: EpubReader
     settings:
       base:
         INFOPLIST_FILE: ReadingSync/Info.plist

@@ -40,6 +40,14 @@ final class ReaderViewModel {
 
     var title: String { entry.displayTitle }
 
+    var progressPercent: Int {
+        guard let loc = currentLocator,
+              let progression = loc.locations.totalProgression else {
+            return 0
+        }
+        return Int(progression * 100)
+    }
+
     var savedLocator: Locator? {
         guard let record = try? database.readingPosition(for: entry.bookId),
               let position = record.position else {
@@ -248,21 +256,9 @@ public struct ReaderView: View {
 
     @ViewBuilder
     private func controlsOverlay(_ vm: ReaderViewModel) -> some View {
-        VStack {
-            Spacer()
-            HStack {
-                if let loc = vm.currentLocator,
-                   let progression = loc.locations.totalProgression {
-                    Text("\(Int(progression * 100))%")
-                        .font(.caption)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                }
-                Spacer()
-            }
-            .padding()
-        }
+        ControlsOverlay(
+            progressPercent: vm.progressPercent
+        )
     }
 
     @ViewBuilder

@@ -50,7 +50,7 @@ function chapterLabel(toc: TocEntry[], spine: ParsedEpub["spine"], spineIndex: n
 
   function findInEntries(entries: TocEntry[]): string | undefined {
     for (const entry of entries) {
-      const entryBase = entry.href.split("#")[0];
+      const entryBase = entry.href.split("#")[0] ?? "";
       if (entryBase === targetBase || entryBase.endsWith("/" + targetBase)) {
         return entry.label;
       }
@@ -263,7 +263,7 @@ export function SearchModal({
 
 const styles = StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 100,
   },
   safeArea: {

@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { bearer } from "better-auth/plugins";
 
 import { db } from "~/server/db";
 import { env } from "~/env";
@@ -26,4 +27,5 @@ export const auth = betterAuth({
   trustedOrigins: env.BETTER_AUTH_TRUSTED_ORIGINS
     ? env.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
     : [],
+  plugins: [bearer()],
 });

@@ -116,7 +116,7 @@ public final class AppDatabase: Sendable {
     public static func makeDefault() throws -> AppDatabase {
         let url = URL.applicationSupportDirectory.appending(path: "ReadingSync", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        let dbPath = url.appending(path: "readingsync.sqlite").path()
+        let dbPath = url.appending(path: "readingsync.sqlite").path(percentEncoded: false)
         return try AppDatabase(path: dbPath)
     }
 }

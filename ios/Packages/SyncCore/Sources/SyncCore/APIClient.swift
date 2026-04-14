@@ -33,12 +33,13 @@ public final class APIClient {
     }
 
     public var signInURL: URL {
-        let callbackPath = "/api/auth/mobile-callback?redirect_uri=\("readingsync://auth-callback".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
-        let encoded = callbackPath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? callbackPath
-        return baseURL.appending(path: "api/auth/mobile-signin")
+        // The server-side `/api/auth/mobile-callback` route defaults its
+        // redirect_uri to `readingsync://auth-callback`, so we don't pass
+        // either `callbackURL` or `redirect_uri` here. Embedding a custom
+        // scheme in the callbackURL query trips Better Auth's validator.
+        baseURL.appending(path: "api/auth/mobile-signin")
             .appending(queryItems: [
                 URLQueryItem(name: "provider", value: "google"),
-                URLQueryItem(name: "callbackURL", value: encoded),
             ])
     }
 

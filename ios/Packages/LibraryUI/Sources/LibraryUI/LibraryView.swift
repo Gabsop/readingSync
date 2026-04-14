@@ -36,20 +36,18 @@ public struct LibraryView: View {
     public init() {}
 
     public var body: some View {
-        NavigationStack {
-            Group {
-                if let viewModel {
-                    content(viewModel)
-                } else {
-                    ProgressView()
-                }
+        Group {
+            if let viewModel {
+                content(viewModel)
+            } else {
+                ProgressView()
             }
-            .navigationTitle("Library")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Sign Out", role: .destructive) {
-                        apiClient.logout()
-                    }
+        }
+        .navigationTitle("Library")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Sign Out", role: .destructive) {
+                    apiClient.logout()
                 }
             }
         }

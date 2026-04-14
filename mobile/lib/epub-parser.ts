@@ -371,6 +371,82 @@ async function readZipText(zip: JSZip, path: string): Promise<string> {
   return file.async("string");
 }
 
+/**
+ * Pre-extract all image assets referenced in a chapter's XHTML.
+ * Returns a Map from relative href (as it appears in src/xlink:href) to a data URI.
+ * The reader can then use this map as a synchronous resolveAsset callback.
+ */
+export async function extractChapterImages(
+  epub: ParsedEpub,
+  spineIndex: number,
+): Promise<Map<string, string>> {
+  const cache = new Map<string, string>();
+  const item = epub.spine[spineIndex];
+  if (!item) return cache;
+
+  // Get the chapter's directory relative to the OPF base path
+  const chapterHref = item.href;
+  const chapterDir = chapterHref.includes("/")
+    ? chapterHref.substring(0, chapterHref.lastIndexOf("/") + 1)
+    : "";
+
+  // Find all image manifest items
+  const imageItems = Array.from(epub.manifest.values()).filter((m) =>
+    m.mediaType.startsWith("image/"),
+  );
+
+  // Extract each image in parallel
+  await Promise.all(
+    imageItems.map(async (img) => {
+      const zipPath = resolveHref(epub.opfBasePath, img.href);
+      const file = epub.zip.file(zipPath);
+      if (!file) return;
+
+      try {
+        const base64 = await file.async("base64");
+        const dataUri = `data:${img.mediaType};base64,${base64}`;
+
+        // Store under multiple possible relative references:
+        // 1. As-is href from manifest
+        cache.set(img.href, dataUri);
+        // 2. Relative from chapter directory (e.g., "../images/fig.jpg")
+        if (chapterDir) {
+          // Build relative path from chapter to image
+          const imgFullPath = resolveHref("", img.href);
+          const chapterFullPath = resolveHref("", chapterHref);
+          const chapterDirFull = chapterFullPath.substring(
+            0,
+            chapterFullPath.lastIndexOf("/") + 1,
+          );
+          // If both are under the same base, compute relative
+          if (imgFullPath.startsWith(chapterDirFull)) {
+            cache.set(imgFullPath.substring(chapterDirFull.length), dataUri);
+          } else {
+            // Try ../path pattern
+            const parts = chapterDirFull.split("/").filter(Boolean);
+            for (let i = 0; i < parts.length; i++) {
+              const prefix = "../".repeat(i + 1);
+              if (imgFullPath.startsWith(parts.slice(0, parts.length - i - 1).join("/") + "/")) {
+                const remainder = imgFullPath.substring(
+                  (parts.slice(0, parts.length - i - 1).join("/") + "/").length,
+                );
+                cache.set(prefix + remainder, dataUri);
+              }
+            }
+            // Also store without any directory prefix
+            const imgFilename = img.href.split("/").pop()!;
+            cache.set(imgFilename, dataUri);
+          }
+        }
+      } catch {
+        // Skip failed extractions
+      }
+    }),
+  );
+
+  return cache;
+}
+
 function resolveHref(basePath: string, href: string): string {
   // Decode URI-encoded characters and strip fragment identifiers
   const decoded = decodeURIComponent(href.split("#")[0]!);

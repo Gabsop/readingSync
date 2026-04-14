@@ -3,13 +3,14 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
 import { Suspense, useEffect } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, StyleSheet, useColorScheme, View } from "react-native";
 import { DB_NAME, initializeDatabase } from "../db";
 import {
   registerAppStateSync,
   unregisterAppStateSync,
 } from "../lib/sync-engine";
 import { registerBackgroundSync } from "../lib/background-sync";
+import { useThemeStore } from "../lib/theme-store";
 
 function LoadingFallback() {
   return (
@@ -23,6 +24,7 @@ function SyncProvider({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
 
   useEffect(() => {
+    useThemeStore.getState().load();
     registerAppStateSync(db);
     registerBackgroundSync().catch(() => {});
 
@@ -35,8 +37,11 @@ function SyncProvider({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  const colorScheme = useColorScheme();
+  const bg = colorScheme === "dark" ? "#000000" : "#FFFFFF";
+
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <GestureHandlerRootView style={[styles.container, { backgroundColor: bg }]}>
       <Suspense fallback={<LoadingFallback />}>
         <SQLiteProvider
           databaseName={DB_NAME}
@@ -56,7 +61,7 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
-                name="settings"
+                name="curl-demo"
                 options={{
                   animation: "slide_from_right",
                 }}

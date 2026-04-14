@@ -1,22 +1,17 @@
 /**
- * Controls Overlay — top/bottom bars that appear on center tap.
- *
- * Matches the Apple Books reader controls:
- *   - Top: "N pages left in chapter" in small gray text
- *   - Bottom toolbar: frosted glass floating bar with Contents, Search, Themes & Settings
- *   - Bottom action row: Share, screen, orientation, bookmark icons
- *   - Smooth fade in/out with Reanimated
+ * Controls Overlay — bottom sheet that slides up from the footer.
+ * Matches Apple Books reader controls layout.
  */
 
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
 import Animated, {
   useAnimatedStyle,
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ReaderTheme } from "./reader-settings";
 import { PageScrubber } from "./page-scrubber";
 
@@ -39,7 +34,6 @@ interface ControlsOverlayProps {
 }
 
 function isDark(theme: ReaderTheme) {
-  // Check if background is dark by parsing hex
   const hex = theme.backgroundColor.replace("#", "");
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
@@ -63,202 +57,141 @@ export function ControlsOverlay({
   onShare,
 }: ControlsOverlayProps) {
   const dark = isDark(theme);
-  const blurTint = dark ? "dark" : "light";
+  const insets = useSafeAreaInsets();
   const iconColor = dark ? "#F2F2F7" : "#1C1C1E";
+  const textColor = dark ? "#F2F2F7" : "#1C1C1E";
+  const secondaryColor = dark ? "#8E8E93" : "#6D6D72";
   const toolbarBg = dark
-    ? "rgba(60, 60, 67, 0.65)"
-    : "rgba(255, 255, 255, 0.75)";
+    ? "rgba(44, 44, 46, 0.92)"
+    : "rgba(255, 255, 255, 0.92)";
   const separatorColor = dark
-    ? "rgba(255, 255, 255, 0.15)"
-    : "rgba(0, 0, 0, 0.1)";
+    ? "rgba(255, 255, 255, 0.12)"
+    : "rgba(0, 0, 0, 0.08)";
+  const actionBg = dark
+    ? "rgba(44, 44, 46, 0.92)"
+    : "rgba(255, 255, 255, 0.92)";
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: withTiming(visible ? 1 : 0, {
       duration: FADE_DURATION,
       easing: Easing.inOut(Easing.ease),
     }),
+    transform: [
+      {
+        translateY: withTiming(visible ? 0 : 20, {
+          duration: FADE_DURATION,
+          easing: Easing.out(Easing.ease),
+        }),
+      },
+    ],
   }));
 
   return (
     <Animated.View
-      style={[styles.overlay, animatedStyle]}
+      style={[styles.container, { bottom: insets.bottom + 4 }, animatedStyle]}
       pointerEvents={visible ? "auto" : "none"}
     >
-      {/* Top bar — pages left in chapter */}
-      <View style={styles.topBar}>
-        <Text style={[styles.topText, { color: theme.secondaryTextColor }]}>
-          {pagesLeftInChapter === 1
-            ? "1 page left in chapter"
-            : `${pagesLeftInChapter} pages left in chapter`}
-        </Text>
+      {/* Pages left indicator */}
+      <Text style={[styles.pagesLeft, { color: secondaryColor }]}>
+        {pagesLeftInChapter === 1
+          ? "1 page left in chapter"
+          : `${pagesLeftInChapter} pages left in chapter`}
+      </Text>
+
+      {/* Main toolbar */}
+      <View style={[styles.toolbar, { backgroundColor: toolbarBg }]}>
+        {/* Contents */}
+        <Pressable style={styles.toolbarRow} onPress={onOpenContents}>
+          <Text style={[styles.toolbarText, { color: textColor }]}>
+            Contents <Text style={{ color: secondaryColor }}>· {progressPercent}%</Text>
+          </Text>
+          <Ionicons name="list" size={18} color={iconColor} />
+        </Pressable>
+
+        <View style={[styles.separator, { backgroundColor: separatorColor }]} />
+
+        {/* Search */}
+        <Pressable style={styles.toolbarRow} onPress={onOpenSearch}>
+          <Text style={[styles.toolbarText, { color: textColor }]}>Search Book</Text>
+          <Ionicons name="search" size={16} color={iconColor} />
+        </Pressable>
+
+        <View style={[styles.separator, { backgroundColor: separatorColor }]} />
+
+        {/* Themes & Settings */}
+        <Pressable style={styles.toolbarRow} onPress={onOpenSettings}>
+          <Text style={[styles.toolbarText, { color: textColor }]}>Themes & Settings</Text>
+          <Text style={[styles.aaIcon, { color: iconColor }]}>Aa</Text>
+        </Pressable>
       </View>
 
-      {/* Bottom area */}
-      <View style={styles.bottomArea}>
-        {/* Main toolbar — frosted glass */}
-        <BlurView
-          intensity={40}
-          tint={blurTint}
-          style={[styles.toolbar, { backgroundColor: toolbarBg }]}
-        >
-          {/* Contents button */}
-          <Pressable
-            style={styles.toolbarButton}
-            onPress={onOpenContents}
-          >
-            <Text
-              style={[styles.toolbarButtonText, { color: iconColor }]}
-              numberOfLines={1}
-            >
-              Contents{" "}
-              <Text style={styles.toolbarButtonDot}>&middot;</Text>{" "}
-              {progressPercent}%
-            </Text>
-            <Ionicons
-              name="list"
-              size={18}
-              color={iconColor}
-              style={styles.toolbarIcon}
-            />
-          </Pressable>
-
-          {/* Separator */}
-          <View
-            style={[styles.toolbarSeparator, { backgroundColor: separatorColor }]}
-          />
-
-          {/* Search button */}
-          <Pressable
-            style={styles.toolbarButton}
-            onPress={onOpenSearch}
-          >
-            <Text style={[styles.toolbarButtonText, { color: iconColor }]}>
-              Search Book
-            </Text>
-            <Ionicons
-              name="search"
-              size={16}
-              color={iconColor}
-              style={styles.toolbarIcon}
-            />
-          </Pressable>
-
-          {/* Separator */}
-          <View
-            style={[styles.toolbarSeparator, { backgroundColor: separatorColor }]}
-          />
-
-          {/* Themes & Settings button */}
-          <Pressable
-            style={styles.toolbarButton}
-            onPress={onOpenSettings}
-          >
-            <Text style={[styles.toolbarButtonText, { color: iconColor }]}>
-              Themes & Settings
-            </Text>
-            <Text style={[styles.toolbarAaIcon, { color: iconColor }]}>
-              Aa
-            </Text>
-          </Pressable>
-        </BlurView>
-
-        {/* Action row — icon buttons */}
-        <BlurView
-          intensity={40}
-          tint={blurTint}
-          style={[styles.actionRow, { backgroundColor: toolbarBg }]}
-        >
-          <Pressable style={styles.actionButton} onPress={onShare}>
-            <Ionicons name="share-outline" size={22} color={iconColor} />
-          </Pressable>
-
-          <Pressable style={styles.actionButton}>
-            <Ionicons name="phone-portrait-outline" size={22} color={iconColor} />
-          </Pressable>
-
-          <Pressable style={styles.actionButton}>
-            <Ionicons
-              name="lock-closed-outline"
-              size={22}
-              color={iconColor}
-            />
-          </Pressable>
-
-          <Pressable style={styles.actionButton} onPress={onBookmark}>
-            <Ionicons name="bookmark-outline" size={22} color={iconColor} />
-          </Pressable>
-        </BlurView>
-
-        {/* Page scrubber */}
-        <PageScrubber
-          globalPage={globalPage}
-          globalTotalPages={globalTotalPages}
-          theme={theme}
-          dark={dark}
-          getChapterNameForPage={getChapterNameForPage}
-          onScrubEnd={onScrubEnd}
-        />
+      {/* Action buttons row */}
+      <View style={[styles.actionRow, { backgroundColor: actionBg }]}>
+        <Pressable style={styles.actionButton} onPress={onShare}>
+          <Ionicons name="share-outline" size={22} color={iconColor} />
+        </Pressable>
+        <Pressable style={styles.actionButton}>
+          <Ionicons name="phone-portrait-outline" size={22} color={iconColor} />
+        </Pressable>
+        <Pressable style={styles.actionButton}>
+          <Ionicons name="lock-closed-outline" size={22} color={iconColor} />
+        </Pressable>
+        <Pressable style={styles.actionButton} onPress={onBookmark}>
+          <Ionicons name="bookmark-outline" size={22} color={iconColor} />
+        </Pressable>
       </View>
+
+      {/* Page scrubber */}
+      <PageScrubber
+        globalPage={globalPage}
+        globalTotalPages={globalTotalPages}
+        theme={theme}
+        dark={dark}
+        getChapterNameForPage={getChapterNameForPage}
+        onScrubEnd={onScrubEnd}
+      />
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "space-between",
-    pointerEvents: "box-none",
+  container: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    gap: 8,
   },
-  topBar: {
-    paddingTop: 4,
-    alignItems: "center",
-  },
-  topText: {
+  pagesLeft: {
     fontSize: 13,
-    fontWeight: "400",
-  },
-  bottomArea: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    gap: 10,
+    textAlign: "center",
+    marginBottom: 2,
   },
   toolbar: {
-    flexDirection: "column",
     borderRadius: 14,
     overflow: "hidden",
   },
-  toolbarButton: {
+  toolbarRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
-  toolbarButtonText: {
-    fontSize: 15,
-    fontWeight: "500",
+  toolbarText: {
+    fontSize: 16,
   },
-  toolbarButtonDot: {
-    fontSize: 15,
-  },
-  toolbarIcon: {
-    marginLeft: 8,
-  },
-  toolbarAaIcon: {
-    fontSize: 17,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  toolbarSeparator: {
+  separator: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: 16,
+    marginLeft: 16,
+  },
+  aaIcon: {
+    fontSize: 18,
+    fontWeight: "600",
   },
   actionRow: {
+    borderRadius: 14,
     flexDirection: "row",
     justifyContent: "space-around",
-    alignItems: "center",
-    borderRadius: 14,
-    overflow: "hidden",
     paddingVertical: 10,
   },
   actionButton: {

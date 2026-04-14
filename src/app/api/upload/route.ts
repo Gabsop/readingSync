@@ -36,19 +36,42 @@ export async function POST(request: Request) {
   return NextResponse.json({ signedUrl, key, safeName });
 }
 
-// Step 2: After client uploads directly to R2, save to database
+// Step 2: After client uploads directly to R2, save to database.
+//
+// `bookId` contract (shared by all clients — KOReader plugin, Swift app):
+//   - Prefer EPUB dc:identifier (ISBN, UUID, etc.) sanitized.
+//   - Fall back to sanitized filename when dc:identifier is absent.
+//   - Sanitization: lowercase, replace [^a-z0-9._-] with "-", collapse runs,
+//     trim leading/trailing "-". Empty → "unknown".
+// The server validates the format but does not re-derive the id.
+const BOOK_ID_PATTERN = /^[a-z0-9._-]+$/;
+
 export async function PUT(request: Request) {
   const session = await getSessionFromRequest(request);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const { key, safeName } = (await request.json()) as {
-    key: string;
-    safeName: string;
+  const { bookId, bookTitle, key, safeName } = (await request.json()) as {
+    bookId?: string;
+    bookTitle?: string;
+    key?: string;
+    safeName?: string;
   };
 
+  if (!bookId || !BOOK_ID_PATTERN.test(bookId)) {
+    return NextResponse.json(
+      { error: "Missing or malformed bookId (expected [a-z0-9._-]+)" },
+      { status: 400 },
+    );
+  }
+  if (!key || !safeName) {
+    return NextResponse.json(
+      { error: "Missing key or safeName" },
+      { status: 400 },
+    );
+  }
+
   const epubUrl = `${env.R2_PUBLIC_URL}/${key}`;
-  const bookId = safeName;
 
   const existing = await db.query.readingProgress.findFirst({
     where: eq(readingProgress.bookId, bookId),
@@ -57,12 +80,13 @@ export async function PUT(request: Request) {
   if (existing) {
     await db
       .update(readingProgress)
-      .set({ epubUrl })
+      .set({ epubUrl, bookTitle: bookTitle ?? existing.bookTitle })
       .where(eq(readingProgress.bookId, bookId));
   } else {
+    const fallbackTitle = safeName.replace(/\.epub$/i, "").replace(/-+/g, " ").trim();
     await db.insert(readingProgress).values({
       bookId,
-      bookTitle: safeName.replace(".epub", "").replace(/-+/g, " ").trim(),
+      bookTitle: bookTitle ?? fallbackTitle,
       position: "0",
       progress: 0,
       epubUrl,

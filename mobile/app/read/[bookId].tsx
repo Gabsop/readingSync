@@ -11,15 +11,6 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSQLiteContext } from "expo-sqlite";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
-  runOnJS,
-  Easing,
-} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -28,7 +19,10 @@ import {
   extractExcerptAtPosition,
   searchExcerpt,
 } from "../../lib/epub-parser";
-import { renderXhtml, resetKeyCounter } from "../../lib/xhtml-renderer";
+import { extractText, paginateText, TextPageView } from "../../lib/text-paginator";
+import PageFlipper from "../../lib/page-flipper";
+import { Host, Menu, Button, Section } from "@expo/ui/swift-ui";
+import { labelStyle } from "@expo/ui/swift-ui/modifiers";
 import type { ParsedEpub, TocEntry } from "../../lib/epub-parser";
 import { TocModal } from "../../lib/toc-modal";
 import {
@@ -65,10 +59,6 @@ function findTocEntryByHref(toc: TocEntry[], href: string): string | null {
 }
 
 // Gesture thresholds
-const SWIPE_THRESHOLD_RATIO = 0.25; // 25% of screen width to trigger page turn
-const SWIPE_VELOCITY_THRESHOLD = 500; // px/s — fast flick triggers regardless of distance
-const SLIDE_DURATION = 250; // ms for slide-out animation
-const SPRING_CONFIG = { damping: 20, stiffness: 300 }; // snap-back spring
 
 // Layout constants
 const HEADER_HEIGHT = 40;
@@ -86,7 +76,7 @@ export default function ReaderScreen() {
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
-  const [chapterContent, setChapterContent] = useState<React.ReactNode | null>(null);
+  const [textPages, setTextPages] = useState<ReturnType<typeof paginateText>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentChapter, setCurrentChapter] = useState(0);
@@ -142,9 +132,14 @@ export default function ReaderScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const epubRef = useRef<ParsedEpub | null>(null);
 
-  // Page height calculation — available space for content
-  const pageHeight =
+  // Page height calculation — available space for content, snapped to line height
+  // so page breaks always fall between lines (no cut text)
+  const rawPageHeight =
     screenHeight - insets.top - insets.bottom - HEADER_HEIGHT - FOOTER_HEIGHT;
+  const pageHeight =
+    computedLineHeight > 0
+      ? Math.floor(rawPageHeight / computedLineHeight) * computedLineHeight
+      : rawPageHeight;
 
   // Track pages-per-chapter for global page number calculation
   const chapterPageCountsRef = useRef<Map<number, number>>(new Map());
@@ -154,11 +149,12 @@ export default function ReaderScreen() {
     loadBook();
   }, [bookId, settingsLoaded]);
 
-  // Re-render chapter when settings change (after initial load)
+  // Re-paginate when settings change (font size, etc.)
   useEffect(() => {
-    if (!bookId || totalChapters === 0 || !settingsLoaded) return;
-    loadChapter(currentChapter);
-  }, [currentChapter, totalChapters, settings.fontSize, settings.fontFamily, settings.theme, settings.lineSpacing, settings.margins, settings.textAlign]);
+    if (!bookId || totalChapters === 0 || !settingsLoaded || textPages.length === 0) return;
+    // Re-load the entire book with new settings
+    loadBook();
+  }, [settings.fontSize, settings.fontFamily, settings.lineSpacing, settings.margins, settings.textAlign]);
 
   async function loadBook() {
     try {
@@ -210,22 +206,23 @@ export default function ReaderScreen() {
         pendingRestorePageRef.current = startPage;
       }
 
-      if (startChapter > 0) {
-        setCurrentChapter(startChapter);
-      } else {
-        // Render first chapter directly
-        const xhtml = await readChapter(epub, 0);
-        resetKeyCounter();
-        const rendered = renderXhtml(xhtml, {
-          baseFontSize: settings.fontSize,
-          fontFamily: computedFontFamily,
-          lineHeight: computedLineHeight,
-          textColor: theme.textColor,
-          linkColor: theme.linkColor,
-          textAlign: settings.textAlign,
-          resolveAsset: (href) => undefined,
-        });
-        setChapterContent(rendered);
+      // Load ALL chapters and paginate the entire book
+      let fullText = "";
+      for (let i = 0; i < epub.spine.length; i++) {
+        const xhtml = await readChapter(epub, i);
+        const chapterText = extractText(xhtml);
+        if (chapterText.length > 0) {
+          fullText += (i > 0 ? "\n\n" : "") + chapterText;
+        }
+      }
+
+      const pages = paginateText(fullText, screenWidth, pageHeight, settings.fontSize, computedLineHeight);
+      setTextPages(pages);
+      setTotalPages(pages.length);
+
+      // Restore saved position
+      if (startPage > 0 && startPage < pages.length) {
+        setCurrentPage(startPage);
       }
 
       // Non-blocking: check remote progress in background
@@ -375,41 +372,6 @@ export default function ReaderScreen() {
     setControlsVisible(false);
   }
 
-  async function loadChapter(spineIndex: number) {
-    try {
-      setLoading(true);
-
-      let epub = epubRef.current;
-      if (!epub) {
-        const row = await db.getFirstAsync<{ epub_path: string }>(
-          "SELECT epub_path FROM books WHERE id = ?",
-          [bookId!],
-        );
-        if (!row?.epub_path) return;
-        epub = await parseEpub(row.epub_path);
-        epubRef.current = epub;
-      }
-
-      const xhtml = await readChapter(epub, spineIndex);
-      resetKeyCounter();
-      const rendered = renderXhtml(xhtml, {
-        baseFontSize: settings.fontSize,
-        fontFamily: computedFontFamily,
-        lineHeight: computedLineHeight,
-        textColor: theme.textColor,
-        linkColor: theme.linkColor,
-        textAlign: settings.textAlign,
-      });
-      setChapterContent(rendered);
-      setCurrentPage(0);
-      // Scroll to top of new chapter
-      scrollRef.current?.scrollTo({ y: 0, animated: false });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load chapter");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   // --- Pagination callbacks ---
 
@@ -558,135 +520,9 @@ export default function ReaderScreen() {
 
   // --- Navigation ---
 
-  // Shared values for swipe animation
-  const translateX = useSharedValue(0);
-  const pageShadowOpacity = useSharedValue(0);
-  const isAnimating = useRef(false);
-
   function hapticTick() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
-
-  function goToNextPage() {
-    if (isAnimating.current) return;
-    userHasNavigatedRef.current = true;
-    if (currentPage < totalPages - 1) {
-      hapticTick();
-      const nextPage = currentPage + 1;
-      scrollRef.current?.scrollTo({ y: nextPage * pageHeight, animated: true });
-      setCurrentPage(nextPage);
-    } else if (currentChapter < totalChapters - 1) {
-      hapticTick();
-      setCurrentChapter((c) => c + 1);
-    }
-  }
-
-  function goToPreviousPage() {
-    if (isAnimating.current) return;
-    userHasNavigatedRef.current = true;
-    if (currentPage > 0) {
-      hapticTick();
-      const prevPage = currentPage - 1;
-      scrollRef.current?.scrollTo({ y: prevPage * pageHeight, animated: true });
-      setCurrentPage(prevPage);
-    } else if (currentChapter > 0) {
-      hapticTick();
-      setCurrentChapter((c) => c - 1);
-      // TODO: scroll to last page of previous chapter after it loads
-    }
-  }
-
-  function finishPageTurnNext() {
-    isAnimating.current = false;
-    goToNextPage();
-  }
-
-  function finishPageTurnPrev() {
-    isAnimating.current = false;
-    goToPreviousPage();
-  }
-
-  /** Animate page sliding off-screen, then navigate and reset */
-  function animatePageTurn(direction: "left" | "right") {
-    isAnimating.current = true;
-    const target = direction === "left" ? -screenWidth : screenWidth;
-    const finisher = direction === "left" ? finishPageTurnNext : finishPageTurnPrev;
-
-    translateX.value = withTiming(
-      target,
-      { duration: SLIDE_DURATION, easing: Easing.out(Easing.cubic) },
-      (finished) => {
-        if (finished) {
-          translateX.value = 0;
-          pageShadowOpacity.value = 0;
-          runOnJS(finisher)();
-        }
-      },
-    );
-    pageShadowOpacity.value = withTiming(0.15, { duration: SLIDE_DURATION });
-  }
-
-  /** Snap back to origin (cancelled swipe) */
-  function snapBack() {
-    translateX.value = withSpring(0, SPRING_CONFIG);
-    pageShadowOpacity.value = withTiming(0, { duration: 150 });
-  }
-
-  // --- Gestures ---
-
-  function hideControls() {
-    setControlsVisible(false);
-  }
-
-  function handleTapNavigation(locationX: number) {
-    const leftZone = screenWidth * 0.4;
-    const rightZone = screenWidth * 0.6;
-
-    if (locationX < leftZone) {
-      setControlsVisible(false);
-      goToPreviousPage();
-    } else if (locationX > rightZone) {
-      setControlsVisible(false);
-      goToNextPage();
-    } else {
-      // Center 20%: toggle controls overlay
-      setControlsVisible((v) => !v);
-    }
-  }
-
-  const tapGesture = Gesture.Tap()
-    .onEnd((e) => {
-      runOnJS(handleTapNavigation)(e.x);
-    });
-
-  const panGesture = Gesture.Pan()
-    .activeOffsetX([-15, 15]) // Must move 15px horizontally before activating
-    .failOffsetY([-10, 10]) // Cancel if vertical movement exceeds 10px
-    .onUpdate((e) => {
-      translateX.value = e.translationX;
-      // Shadow grows with swipe distance
-      pageShadowOpacity.value = Math.min(
-        0.2,
-        Math.abs(e.translationX) / screenWidth * 0.4,
-      );
-    })
-    .onEnd((e) => {
-      const swipeThreshold = screenWidth * SWIPE_THRESHOLD_RATIO;
-      const swipedLeft =
-        e.translationX < -swipeThreshold || e.velocityX < -SWIPE_VELOCITY_THRESHOLD;
-      const swipedRight =
-        e.translationX > swipeThreshold || e.velocityX > SWIPE_VELOCITY_THRESHOLD;
-
-      if (swipedLeft) {
-        runOnJS(hideControls)();
-        runOnJS(animatePageTurn)("left");
-      } else if (swipedRight) {
-        runOnJS(hideControls)();
-        runOnJS(animatePageTurn)("right");
-      } else {
-        runOnJS(snapBack)();
-      }
-    });
 
   /** Resolve a global page number to the chapter name it falls in. */
   function getChapterNameForPage(page: number) {
@@ -733,16 +569,6 @@ export default function ReaderScreen() {
     }
   }
 
-  const composedGesture = Gesture.Race(panGesture, tapGesture);
-
-  // Animated styles
-  const animatedPageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  const animatedShadowStyle = useAnimatedStyle(() => ({
-    opacity: pageShadowOpacity.value,
-  }));
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
@@ -766,84 +592,77 @@ export default function ReaderScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : (
-        <GestureDetector gesture={composedGesture}>
-          <Animated.View style={[{ flex: 1 }, animatedPageStyle]}>
-            {/* Page edge shadow during swipe */}
-            <Animated.View
-              style={[styles.pageShadow, animatedShadowStyle]}
-              pointerEvents="none"
+        <Pressable
+          style={[styles.pageContainer, { height: pageHeight }]}
+        >
+          {/* Page flipper with text pages */}
+          {textPages.length > 0 ? (
+            <PageFlipper
+              key={`book-${textPages.length}`}
+              data={textPages}
+              pageSize={{ width: screenWidth, height: pageHeight }}
+              portrait
+              pressable={false}
+              renderPage={(page) => (
+                <TextPageView
+                  page={page}
+                  fontSize={settings.fontSize}
+                  lineHeight={computedLineHeight}
+                  fontFamily={computedFontFamily}
+                  textColor={theme.textColor}
+                  backgroundColor={theme.backgroundColor}
+                  textAlign={settings.textAlign}
+                  pageHeight={pageHeight}
+                  pageWidth={screenWidth}
+                />
+              )}
+              onFlippedEnd={(index) => {
+                userHasNavigatedRef.current = true;
+                setCurrentPage(index);
+                hapticTick();
+              }}
+              onPageDragStart={() => setControlsVisible(false)}
             />
-            <View style={[styles.pageContainer, { height: pageHeight }]}>
-              <ScrollView
-                ref={scrollRef}
-                pagingEnabled
-                showsVerticalScrollIndicator={false}
-                onContentSizeChange={handleContentSizeChange}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-                decelerationRate="fast"
-                snapToInterval={pageHeight}
-                contentContainerStyle={[
-                  styles.scrollContent,
-                  { paddingHorizontal: computedMargin },
-                ]}
-                pointerEvents="none"
-              >
-                {chapterContent}
-              </ScrollView>
+          ) : (
+            <View style={styles.centered}>
+              <ActivityIndicator size="small" color={theme.secondaryTextColor} />
             </View>
-          </Animated.View>
-        </GestureDetector>
+          )}
+        </Pressable>
       )}
 
       {/* Footer */}
       <View style={[styles.footer, { height: FOOTER_HEIGHT }]}>
         <Text style={[styles.pageIndicator, { color: theme.secondaryTextColor }]}>
-          {globalTotalPages > 1
-            ? `${globalPage} of ${globalTotalPages}`
-            : "—"}
+          {totalPages > 1 ? `${currentPage + 1} of ${totalPages}` : "—"}
         </Text>
-        <Pressable
-          onPress={() => setTocVisible(true)}
-          hitSlop={8}
-        >
-          <Ionicons name="list" size={20} color={theme.secondaryTextColor} />
-        </Pressable>
+        <Host matchContents colorScheme="dark">
+          <Menu label="" systemImage="list.bullet" modifiers={[labelStyle("iconOnly")]}>
+            <Section>
+              <Button
+                label={`Contents · ${Math.round((currentPage / Math.max(totalPages, 1)) * 100)}%`}
+                systemImage="list.bullet"
+                onPress={() => setTocVisible(true)}
+              />
+              <Button
+                label="Search Book"
+                systemImage="magnifyingglass"
+                onPress={() => setSearchVisible(true)}
+              />
+              <Button
+                label="Themes & Settings"
+                systemImage="textformat.size"
+                onPress={() => setSettingsVisible(true)}
+              />
+            </Section>
+            <Section>
+              <Button label="Share" systemImage="square.and.arrow.up" onPress={() => {}} />
+              <Button label="Bookmark" systemImage="bookmark" onPress={() => {}} />
+            </Section>
+          </Menu>
+        </Host>
       </View>
 
-      {/* Controls overlay — appears on center tap */}
-      <ControlsOverlay
-        visible={controlsVisible}
-        theme={theme}
-        pagesLeftInChapter={Math.max(0, totalPages - currentPage - 1)}
-        progressPercent={
-          globalTotalPages > 0
-            ? Math.round((globalPage / globalTotalPages) * 100)
-            : 0
-        }
-        globalPage={globalPage}
-        globalTotalPages={globalTotalPages}
-        getChapterNameForPage={getChapterNameForPage}
-        onScrubEnd={handleScrubEnd}
-        onOpenSettings={() => {
-          setControlsVisible(false);
-          setSettingsVisible(true);
-        }}
-        onOpenContents={() => {
-          setControlsVisible(false);
-          setTocVisible(true);
-        }}
-        onOpenSearch={() => {
-          setControlsVisible(false);
-          setSearchVisible(true);
-        }}
-        onBookmark={() => {
-          // TODO: implement bookmarks (stretch)
-        }}
-        onShare={() => {
-          // TODO: implement share (stretch)
-        }}
-      />
 
       {/* Settings panel */}
       <ReaderSettingsPanel
@@ -965,6 +784,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
     zIndex: 10,
     opacity: 0,
+  },
+  pageEdgeShadow: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    right: -20,
+    width: 20,
+    zIndex: 10,
+    backgroundColor: "transparent",
+    shadowColor: "#000",
+    shadowOffset: { width: -5, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 20,
   },
   scrollContent: {
     paddingHorizontal: CONTENT_PADDING_H,

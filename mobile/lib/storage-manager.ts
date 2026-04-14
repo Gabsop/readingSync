@@ -48,7 +48,7 @@ export async function getStorageInfo(db: SQLiteDatabase): Promise<StorageInfo> {
   const coverBytes = getDirectorySize(getCoversDir());
 
   const row = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM books WHERE epub_path IS NOT NULL",
+    "SELECT COUNT(*) as count FROM books",
   );
   const bookCount = row?.count ?? 0;
 
@@ -80,6 +80,10 @@ export async function clearDownloadCache(db: SQLiteDatabase) {
 
   await db.runAsync(
     "UPDATE books SET epub_path = NULL, cover_path = NULL",
+  );
+  // Delete books imported from mobile (no cloud backup to re-download from)
+  await db.runAsync(
+    "DELETE FROM books WHERE source = 'mobile'",
   );
 }
 

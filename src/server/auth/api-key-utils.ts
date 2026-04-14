@@ -1,13 +1,13 @@
 import { createHash, randomBytes } from "crypto";
 
-const PREFIX = "rs_k_";
+const PREFIX = "rs_";
 
 /** Generate a new API key. Returns both the raw key (shown once) and its SHA-256 hash. */
 export function generateApiKey() {
-  const raw = randomBytes(32).toString("base64url");
+  const raw = randomBytes(8).toString("hex");
   const fullKey = `${PREFIX}${raw}`;
   const keyHash = hashApiKey(fullKey);
-  const prefix = fullKey.slice(0, PREFIX.length + 8);
+  const prefix = fullKey.slice(0, PREFIX.length + 6);
 
   return { fullKey, keyHash, prefix };
 }

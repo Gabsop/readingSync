@@ -92,17 +92,65 @@ local function getProgress(bookId, source)
     return nil
 end
 
+--- Sanitize any string into the canonical bookId format.
+--- Contract (shared with backend + Swift client):
+---   lowercase, replace [^a-z0-9._-] with "-", collapse runs, trim "-".
+local function sanitizeId(s)
+    if not s or s == "" then return "unknown" end
+    s = s:lower()
+    s = s:gsub("[^%w%.%-_]", "-")
+    s = s:gsub("%-+", "-")
+    s = s:gsub("^%-+", ""):gsub("%-+$", "")
+    if s == "" then return "unknown" end
+    return s
+end
+
+--- Try to read dc:identifier from the document's metadata.
+--- KOReader's CreDocument exposes getProps(); the identifier field name varies
+--- across versions so we check a few shapes defensively.
+local function readDcIdentifier(doc)
+    local props
+    pcall(function() props = doc:getProps() end)
+    if not props then return nil end
+
+    if type(props.identifiers) == "string" and props.identifiers ~= "" then
+        -- May be comma-separated; take the first entry.
+        local first = props.identifiers:match("^([^,]+)")
+        if first then return first end
+    end
+    if type(props.identifier) == "string" and props.identifier ~= "" then
+        return props.identifier
+    end
+    return nil
+end
+
+--- Compute the canonical bookId for a document.
+--- Prefers dc:identifier (stable across filenames/devices); falls back to
+--- the sanitized filename when identifier is absent.
 local function getBookId(doc)
+    local identifier = readDcIdentifier(doc)
+    if identifier then
+        return sanitizeId(identifier)
+    end
     local filepath = doc.file or "unknown"
+    local filename = filepath:match("([^/]+)$") or filepath
+    return sanitizeId(filename)
+end
+
+--- Extract the filename (basename) from a filepath, for use as the R2 key.
+local function getFileName(filepath)
     return filepath:match("([^/]+)$") or filepath
 end
 
 --- Upload EPUB to R2 via presigned URL.
 --- Uses ltn12.source.file() for memory-efficient streaming.
-local function uploadEpub(filepath, fileName)
+--- `bookId` is the canonical id (from getBookId) stored in the DB.
+--- `fileName` is the on-disk basename, used only for the R2 object key.
+local function uploadEpub(filepath, bookId, bookTitle)
     local http = require("socket.http")
     local ltn12 = require("ltn12")
     local apiKey = loadApiKey()
+    local fileName = getFileName(filepath)
 
     -- Step 1: Get presigned URL
     local reqBody = JSON.encode({ fileName = fileName })
@@ -164,6 +212,8 @@ local function uploadEpub(filepath, fileName)
 
     -- Step 3: Confirm upload to backend
     local confirmBody = JSON.encode({
+        bookId = bookId,
+        bookTitle = bookTitle,
         key = presignData.key,
         safeName = presignData.safeName,
     })
@@ -221,7 +271,16 @@ local function buildSyncPayload(self)
 
     local book_id = getBookId(doc)
     local filepath = doc.file or "unknown"
-    local book_title = filepath:match("([^/]+)%.[^.]+$") or book_id
+    local book_title
+    pcall(function()
+        local props = doc:getProps()
+        if props and type(props.title) == "string" and props.title ~= "" then
+            book_title = props.title
+        end
+    end)
+    if not book_title then
+        book_title = filepath:match("([^/]+)%.[^.]+$") or book_id
+    end
 
     local ok_font, font_size = pcall(function() return doc:getFontSize() end)
     local ok_margin, margins = pcall(function() return doc:getPageMargins() end)
@@ -471,7 +530,7 @@ function ReadingSync:addToMainMenu(menu_items)
                         title = "ReadingSync API Key",
                         description = "Generate a key in the mobile app under Settings → Kindle API Key, then paste it here.",
                         input = current,
-                        input_hint = "rs_k_...",
+                        input_hint = "rs_...",
                         buttons = {
                             {
                                 {
@@ -537,7 +596,7 @@ function ReadingSync:syncProgressSilent()
                         text = "Uploading book to cloud...",
                         timeout = 2,
                     })
-                    local ok = uploadEpub(filepath, data.book_id)
+                    local ok = uploadEpub(filepath, data.book_id, data.book_title)
                     if ok then
                         log("Auto-sync: EPUB upload succeeded")
                     else
@@ -582,7 +641,7 @@ function ReadingSync:syncProgress()
                         text = "Uploading book to cloud...",
                         timeout = 2,
                     })
-                    local ok = uploadEpub(filepath, data.book_id)
+                    local ok = uploadEpub(filepath, data.book_id, data.book_title)
                     if ok then
                         UIManager:show(InfoMessage:new{
                             text = "Book uploaded to cloud!",

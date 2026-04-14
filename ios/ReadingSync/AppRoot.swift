@@ -8,10 +8,12 @@ struct AppRoot: View {
 
     var body: some View {
         if apiClient.isAuthenticated {
-            LibraryView()
-                .navigationDestination(for: ProgressEntry.self) { entry in
-                    ReaderView(entry: entry)
-                }
+            NavigationStack {
+                LibraryView()
+                    .navigationDestination(for: ProgressEntry.self) { entry in
+                        ReaderView(entry: entry)
+                    }
+            }
         } else {
             LoginView()
         }

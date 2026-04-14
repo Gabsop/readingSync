@@ -68,10 +68,8 @@ const xhtmlParser = new XMLParser({
  */
 export function renderXhtml(xhtml: string, options: RendererOptions = {}) {
   const parsed = xhtmlParser.parse(xhtml);
-  // The top-level is usually [{ html: [...] }] or [{ "?xml": ... }, { html: [...] }]
   const htmlNode = findTag(parsed, "html");
   if (!htmlNode) {
-    // Fallback: treat the whole parse result as body content
     return <View style={baseStyles.chapter}>{renderNodes(parsed, options, 0)}</View>;
   }
 
@@ -79,6 +77,53 @@ export function renderXhtml(xhtml: string, options: RendererOptions = {}) {
   const content = bodyNode ?? htmlNode;
 
   return <View style={baseStyles.chapter}>{renderNodes(content, options, 0)}</View>;
+}
+
+/**
+ * Like renderXhtml but returns a flat array of top-level block elements
+ * instead of wrapping them in a single View. Used for pagination.
+ */
+export function renderXhtmlElements(xhtml: string, options: RendererOptions = {}): React.ReactNode[] {
+  const parsed = xhtmlParser.parse(xhtml);
+  const htmlNode = findTag(parsed, "html");
+  const bodyNode = htmlNode ? findTag(htmlNode, "body") : null;
+  let content = bodyNode ?? htmlNode ?? parsed;
+
+  if (!Array.isArray(content)) content = [content];
+
+  // Unwrap single wrapper divs/sections to get individual block elements
+  // EPUBs often have: <body><div class="chapter">...paragraphs...</div></body>
+  if (content.length <= 3) {
+    for (const node of content) {
+      if (typeof node !== "object" || node === null) continue;
+      const obj = node as Record<string, unknown>;
+      for (const tag of Object.keys(obj)) {
+        if (tag === ":@") continue;
+        if (["div", "section", "article", "main"].includes(tag.toLowerCase())) {
+          const innerChildren = obj[tag] as unknown[];
+          if (Array.isArray(innerChildren) && innerChildren.length > 1) {
+            // Use inner children instead — these are the actual paragraphs
+            content = innerChildren;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Render each top-level node as a separate element
+  const result: React.ReactNode[] = [];
+  for (const node of content) {
+    if (typeof node !== "object" || node === null) continue;
+    const rendered = renderNodes([node], options, 0);
+    if (Array.isArray(rendered)) {
+      result.push(...rendered.filter(Boolean));
+    } else if (rendered) {
+      result.push(rendered);
+    }
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

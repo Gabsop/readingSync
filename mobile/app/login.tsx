@@ -6,6 +6,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as AuthSession from "expo-auth-session";
 import { useAuthStore } from "../lib/auth-store";
 import { API_URL } from "../lib/api";
+import { useColors } from "../lib/colors";
 
 // Ensure any lingering browser sessions are dismissed on app start
 WebBrowser.maybeCompleteAuthSession();
@@ -13,6 +14,7 @@ WebBrowser.maybeCompleteAuthSession();
 export default function LoginScreen() {
   const router = useRouter();
   const setToken = useAuthStore((s) => s.setToken);
+  const colors = useColors();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,9 +28,9 @@ export default function LoginScreen() {
         path: "auth-callback",
       });
 
-      // better-auth social sign-in → Google OAuth → mobile-callback → app redirect
+      // mobile-signin (GET) → Google OAuth → mobile-callback → app redirect
       const callbackPath = `/api/auth/mobile-callback?redirect_uri=${encodeURIComponent(redirectUri)}`;
-      const signInUrl = `${API_URL}/api/auth/sign-in/social?provider=google&callbackURL=${encodeURIComponent(callbackPath)}`;
+      const signInUrl = `${API_URL}/api/auth/mobile-signin?provider=google&callbackURL=${encodeURIComponent(callbackPath)}`;
 
       const result = await WebBrowser.openAuthSessionAsync(signInUrl, redirectUri);
 
@@ -55,16 +57,18 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.appName}>ReadingSync</Text>
-          <Text style={styles.tagline}>Pick up where you left off</Text>
+          <Text style={[styles.appName, { color: colors.text }]}>ReadingSync</Text>
+          <Text style={[styles.tagline, { color: colors.secondaryText }]}>
+            Pick up where you left off
+          </Text>
         </View>
 
         <View style={styles.actions}>
           <Pressable
-            style={[styles.googleButton, isSigningIn && styles.googleButtonDisabled]}
+            style={[styles.googleButton, { backgroundColor: colors.tint }, isSigningIn && styles.googleButtonDisabled]}
             onPress={handleGoogleSignIn}
             disabled={isSigningIn}
           >
@@ -75,10 +79,10 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
-          {error && <Text style={styles.error}>{error}</Text>}
+          {error && <Text style={[styles.error, { color: colors.destructive }]}>{error}</Text>}
         </View>
 
-        <Text style={styles.legal}>
+        <Text style={[styles.legal, { color: colors.secondaryText }]}>
           By continuing, you agree to our Terms of Service and Privacy Policy
         </Text>
       </View>
@@ -89,7 +93,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   content: {
     flex: 1,
@@ -104,19 +107,16 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 34,
     fontWeight: "700",
-    color: "#000",
     marginBottom: 8,
   },
   tagline: {
     fontSize: 17,
-    color: "#8E8E93",
   },
   actions: {
     width: "100%",
     marginBottom: 32,
   },
   googleButton: {
-    backgroundColor: "#007AFF",
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
@@ -130,14 +130,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   error: {
-    color: "#FF3B30",
     fontSize: 14,
     textAlign: "center",
     marginTop: 12,
   },
   legal: {
     fontSize: 12,
-    color: "#8E8E93",
     textAlign: "center",
     position: "absolute",
     bottom: 32,

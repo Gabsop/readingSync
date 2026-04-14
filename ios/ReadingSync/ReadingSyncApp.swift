@@ -15,7 +15,7 @@ struct ReadingSyncApp: App {
 
     private static let bgTaskIdentifier = "com.readingsync.sync-refresh"
 
-    @State private var apiClient = APIClient(baseURL: serverURL)
+    @State private var apiClient: APIClient
     private let database: AppDatabase
     @State private var syncEngine: SyncEngine
 

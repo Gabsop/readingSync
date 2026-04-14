@@ -2,9 +2,12 @@ import SwiftUI
 
 struct ControlsOverlay: View {
     let progressPercent: Int
+    let totalProgression: Double
+    let chapterTitle: String?
     var onOpenContents: () -> Void = {}
     var onOpenSearch: () -> Void = {}
     var onOpenSettings: () -> Void = {}
+    var onScrub: (Double) -> Void = { _ in }
 
     var body: some View {
         VStack {
@@ -12,6 +15,14 @@ struct ControlsOverlay: View {
 
             VStack(spacing: 8) {
                 toolbar
+
+                Scrubber(
+                    progress: totalProgression,
+                    chapterTitle: chapterTitle,
+                    onScrub: onScrub
+                )
+                .padding(.horizontal, 4)
+
                 actionRow
             }
             .padding(.horizontal, 12)
@@ -24,7 +35,7 @@ struct ControlsOverlay: View {
         VStack(spacing: 0) {
             toolbarButton(
                 label: "Contents",
-                detail: "· \(progressPercent)%",
+                detail: "\u{B7} \(progressPercent)%",
                 icon: "list.bullet",
                 action: onOpenContents
             )

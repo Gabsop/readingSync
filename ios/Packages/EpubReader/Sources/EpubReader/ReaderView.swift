@@ -49,6 +49,23 @@ final class ReaderViewModel {
         return Int(progression * 100)
     }
 
+    var totalProgression: Double {
+        currentLocator?.locations.totalProgression ?? 0
+    }
+
+    var currentChapterTitle: String? {
+        currentLocator?.title
+    }
+
+    func navigateToProgression(_ progression: Double) {
+        guard let publication else { return }
+        Task {
+            if let locator = await publication.locate(progression: progression) {
+                navigateTo = locator
+            }
+        }
+    }
+
     var savedLocator: Locator? {
         guard let record = try? database.readingPosition(for: entry.bookId),
               let position = record.position else {
@@ -291,9 +308,12 @@ public struct ReaderView: View {
     private func controlsOverlay(_ vm: ReaderViewModel) -> some View {
         ControlsOverlay(
             progressPercent: vm.progressPercent,
+            totalProgression: vm.totalProgression,
+            chapterTitle: vm.currentChapterTitle,
             onOpenContents: { showTOC = true },
             onOpenSearch: { showSearch = true },
-            onOpenSettings: { showSettings = true }
+            onOpenSettings: { showSettings = true },
+            onScrub: { vm.navigateToProgression($0) }
         )
     }
 

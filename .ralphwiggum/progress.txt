@@ -465,4 +465,43 @@
 - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
 - Tests: 7/7 BookIdentity tests pass via `swift test`
 
+### M2 — Reader (Readium)
+
+#### Completed
+- [x] EpubReader package: Readium Swift Toolkit 3.8.0 integration
+  - `EpubLoader`: downloads EPUB from R2 presigned URL to Application Support cache,
+    opens with Readium `AssetRetriever` + `PublicationOpener` → `Publication`
+  - `EPUBNavigatorView`: UIViewControllerRepresentable wrapping `EPUBNavigatorViewController`
+    with delegate for location changes and tap events
+  - `ReaderView`: SwiftUI screen with loading/error/reader states, controls overlay toggle,
+    progress percentage display via `.ultraThinMaterial` capsule
+  - Position saved/restored via UserDefaults + Readium `Locator` JSON serialization
+  - Navigation wired: `NavigationLink(value: entry)` in LibraryView →
+    `.navigationDestination(for: ProgressEntry.self)` in AppRoot → ReaderView
+  - `ProgressEntry` made `Hashable` for NavigationLink value support
+  - `APIClient.token` exposed as `public private(set)` for EPUB download auth
+  - EpubReader added to app target dependencies in `project.yml`
+  - Swift Language Mode set to v5 for EpubReader (Readium compatibility)
+  - Dependencies: ReadiumShared, ReadiumStreamer, ReadiumNavigator (via swift-toolkit 3.8.0)
+  - HTTP server **not required** (deprecated in Readium 3.8.0 for EPUB)
+  - Build: zero errors on Xcode project (xcodebuild), zero errors on SPM (swift build)
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Page curl transition via UIPageViewController adapter
+  - New `PageCurlTransition.swift` in EpubReader package: `PageCurlController` wraps
+    `EPUBNavigatorViewController` inside `UIPageViewController(transitionStyle: .pageCurl)`
+  - Snapshot-based approach: Readium navigator renders behind UIPageViewController,
+    page snapshots pre-captured for adjacent pages so curl animation has content to reveal
+  - Pre-loads next and previous page snapshots after each page turn (navigate Readium
+    forward/backward without animation, capture via `drawHierarchy`, navigate back)
+  - `PageSnapshotVC`: lightweight VC displaying a UIImageView with page snapshot
+  - Returns `nil` from dataSource at first/last page to prevent curling past boundaries
+  - Tap gesture on UIPageViewController for controls overlay toggle
+  - `EPUBNavigatorView` simplified: now wraps `PageCurlController` directly, removed
+    Coordinator and EPUBNavigatorDelegate (callbacks set via closures on controller)
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
 #### Not Started
+- [ ] Local-only position persistence in GRDB (currently UserDefaults)

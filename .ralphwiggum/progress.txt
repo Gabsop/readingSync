@@ -661,3 +661,26 @@
     `.sheet(isPresented: $showSearch)` on the reader ZStack
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+#### Completed (continued)
+- [x] Settings sheet (font, theme, layout controls)
+  - New `SettingsSheet.swift` in EpubReader package: half-sheet with presentation detents
+  - **Themes**: 4 options matching Apple Books — White, Sepia, Gray, Black
+    - Light/Sepia/Dark use Readium's built-in `Theme` enum
+    - Gray uses custom `backgroundColor`/`textColor` via `ReadiumNavigator.Color`
+  - **Font size**: +/- buttons with visual progress bar, range 0.5x–3.0x (0.1 step)
+  - **Font families**: 6 options — Original (publisher styles), Serif, Sans Serif, Athelas,
+    Iowan Old Style, Seravek — each with preview text in its own typeface
+  - **Line height**: Compact (1.0), Normal (1.4), Loose (1.8) segmented control
+  - **Margins**: Narrow (0.5x), Normal (1.0x), Wide (2.0x) segmented control
+  - **Text alignment**: Left / Justified segmented control
+  - `ReaderPreferences` model (`@MainActor @Observable`): persists all settings via
+    UserDefaults with JSON encoding, converts to Readium `EPUBPreferences` for runtime application
+  - `PageCurlController.updatePreferences()`: applies new `EPUBPreferences` via
+    `navigator.submitPreferences()`, re-captures page snapshot and preloads adjacent pages
+  - `EPUBNavigatorView` detects preference changes via `Equatable` comparison in
+    `updateUIViewController`, triggers async preference update on the page curl controller
+  - Wired to ControlsOverlay "Themes & Settings" button via `onOpenSettings` closure and
+    `.sheet(isPresented: $showSettings)` on the reader ZStack
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing

@@ -418,4 +418,51 @@
   - Backend is now a lean REST API server: 14 source files, zero web UI
   - TypeScript passes cleanly (only pre-existing `search-modal.tsx` error remains)
 
-### Not Started
+### Completed (continued 5)
+- [x] API key auth enforcement across all REST endpoints + Kindle plugin + mobile UI
+  - **Backend**: `/api/progress` (GET, POST), `/api/progress/:bookId` (GET), `/api/upload` (POST, PUT)
+    now call `getSessionFromRequest()` — rejects unauthenticated requests with HTTP 401
+  - **KOReader plugin**: reads API key from `/mnt/us/.reading_sync_config` file, sends `x-api-key`
+    header on all progress sync and EPUB upload requests. New "Set API key" menu item under
+    Reading Sync → Set API key with InputDialog for pasting the key
+  - **Mobile settings**: new "Kindle Sync" section in Settings screen with:
+    - "Generate API Key" button (auto-copies to clipboard, shows setup instructions)
+    - Active key display with prefix, last-used date, and revoke button
+    - Confirmation dialog before revoking with destructive styling
+  - Dependency added: `expo-clipboard` for clipboard access
+  - TypeScript passes cleanly
+
+### Not Started (RN app — superseded by native iOS rewrite)
+
+## Native iOS Rewrite (prd-native-app.md)
+
+### M1 — Auth + Library
+
+#### Completed
+- [x] Xcode project skeleton with XcodeGen + 4 local SPM packages
+  - `ios/project.yml` → generates `ReadingSync.xcodeproj` via `xcodegen generate`
+  - Local packages: `SyncCore`, `LibraryUI`, `Persistence` (stub), `EpubReader` (stub)
+  - iOS 17+ deployment target, Swift 6.0, strict concurrency enabled
+  - URL scheme `readingsync://` registered in Info.plist for OAuth callback
+  - `.gitignore` excludes generated `.xcodeproj`, DerivedData, `.build/`
+- [x] SyncCore package: APIClient, Models, KeychainStore, BookIdentity
+  - `APIClient` (@MainActor @Observable): token management, Bearer auth, `fetchProgress()`
+  - `KeychainStore`: Security.framework wrapper (save/load/delete via kSecClassGenericPassword)
+  - `ProgressEntry` (Codable): matches backend `GET /api/progress` JSON shape
+  - `BookIdentity.sanitize()`: mirrors server/Lua bookId sanitization rule
+  - `APIError` enum with localized descriptions
+  - 7 unit tests for BookIdentity sanitization — all passing
+- [x] LibraryUI package: LoginView + LibraryView
+  - `LoginView`: ASWebAuthenticationSession OAuth flow (Google → readingsync://auth-callback?token=)
+  - `LibraryView`: NavigationStack with List, pull-to-refresh, sorted by updatedAt
+  - Book rows: colored placeholder cover, title, progress bar + percentage, source label
+  - Loading, error (with retry), and empty states via ContentUnavailableView
+  - Sign Out button in toolbar
+- [x] App target: ReadingSyncApp + AppRoot
+  - `ReadingSyncApp` (@main): creates APIClient, injects via .environment()
+  - `AppRoot`: auth gate — shows LoginView or LibraryView based on isAuthenticated
+  - Dev/prod server URL via `#if DEBUG`
+- Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+- Tests: 7/7 BookIdentity tests pass via `swift test`
+
+#### Not Started

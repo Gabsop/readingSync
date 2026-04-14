@@ -174,6 +174,7 @@ final class ReaderViewModel {
 
 public struct ReaderView: View {
     @State private var viewModel: ReaderViewModel?
+    @State private var showTOC = false
     private let entry: ProgressEntry
     @Environment(APIClient.self) private var apiClient
     @Environment(\.appDatabase) private var database
@@ -251,13 +252,29 @@ public struct ReaderView: View {
             }
             .navigationTitle(vm.title)
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showTOC) {
+                if let publication = vm.publication {
+                    TOCSheet(
+                        tableOfContents: publication.manifest.tableOfContents,
+                        currentHref: vm.currentLocator?.href.string
+                    ) { link in
+                        let locator = Locator(
+                            href: link.url(),
+                            mediaType: link.mediaType ?? .html,
+                            title: link.title
+                        )
+                        vm.navigateTo = locator
+                    }
+                }
+            }
         }
     }
 
     @ViewBuilder
     private func controlsOverlay(_ vm: ReaderViewModel) -> some View {
         ControlsOverlay(
-            progressPercent: vm.progressPercent
+            progressPercent: vm.progressPercent,
+            onOpenContents: { showTOC = true }
         )
     }
 

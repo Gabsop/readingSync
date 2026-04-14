@@ -503,5 +503,54 @@
   - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
   - Tests: 7/7 SyncCore BookIdentity tests still passing
 
+#### Completed (continued)
+- [x] Local-only position persistence in GRDB (replaces UserDefaults)
+  - Persistence package: GRDB.swift 7.x dependency, `AppDatabase` with migration, `ReadingPositionRecord`
+  - `reading_positions` table matches PRD schema: book_id PK, position, current_page, total_pages,
+    progress, updated_at, source, device_id, excerpt — ready for M3 sync engine
+  - `AppDatabase.makeDefault()` creates SQLite in Application Support directory
+  - Custom `EnvironmentKey` (`\.appDatabase`) for SwiftUI environment injection
+  - `ReaderViewModel` saves Locator JSON + progress + timestamp + source on every position change
+  - `savedLocator` reads from GRDB instead of UserDefaults for position restore on reopen
+  - EpubReader package depends on Persistence; app target injects database at root
+  - Build: zero errors, zero warnings
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
+### M3 — Progress sync
+
+#### Completed
+- [x] Port sync-engine.ts to SyncCore (push/pull, 409 deferral, device-id)
+  - New `SyncEngine` class (`SyncCore/SyncEngine.swift`): @MainActor @Observable, ports all
+    sync logic from RN `sync-engine.ts` to native Swift
+  - **Device ID**: generated as 16-byte random hex, persisted in Keychain via `KeychainStore`,
+    cached in memory — same format as RN `getDeviceId()`
+  - **Push sync (enqueue + flush)**:
+    - `enqueueSync(_:)`: coalesces pending/deferred entries for same book, inserts into
+      `sync_queue` GRDB table, schedules debounced flush (3s via Task.sleep)
+    - `flush()`: processes pending queue items, POSTs to `/api/progress` via `APIClient`,
+      handles 409 as "deferred", retries up to 5 times with exponential backoff, cleans
+      old entries (24h retention)
+    - `cancelPendingFlush()`: cancels debounce task on unmount
+  - **Pull sync**:
+    - `fetchRemoteProgress(bookId:)`: GETs `/api/progress/:bookId`, decodes `RemoteProgress`
+    - `resolveProgressOnOpen(bookId:)`: same-device detection, staleness threshold (7 days),
+      <5% diff auto-apply, >5% diff prompt — exact port of RN logic
+  - **New types** in `Models.swift`:
+    - `RemoteProgress` (Codable): backend progress response with snake_case CodingKeys
+    - `SyncPayload`: input struct for enqueueSync
+    - `SyncProgressBody` (Encodable): POST request body with snake_case CodingKeys
+    - `SyncResolution` enum: useLocal / useRemote / prompt
+  - **APIClient additions**: `syncProgress(_:)` returns HTTP status code (200/409),
+    `fetchBookProgress(bookId:)` decodes RemoteProgress, new `performPost` static helper
+  - **Persistence additions**:
+    - `SyncQueueRecord` (GRDB FetchableRecord + PersistableRecord) with auto-increment id
+    - `v2-sync-queue` migration: creates sync_queue table matching RN schema
+    - CRUD methods: `coalesceSyncQueue`, `insertSyncQueueItem`, `pendingSyncQueueItems`,
+      `updateSyncQueueStatus`, `cleanOldSyncQueueItems`
+  - **SyncCore depends on Persistence** (added to Package.swift) for database access
+  - Build: zero errors, zero warnings on Xcode 26 / iOS 26.4 Simulator
+  - Tests: 7/7 SyncCore BookIdentity tests still passing
+
 #### Not Started
-- [ ] Local-only position persistence in GRDB (currently UserDefaults)
+- [ ] Map Readium Locator ↔ EPUB CFI for position field
+- [ ] Port resolveProgressOnOpen (use_local / use_remote / prompt)

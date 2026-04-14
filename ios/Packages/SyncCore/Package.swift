@@ -7,8 +7,11 @@ let package = Package(
     products: [
         .library(name: "SyncCore", targets: ["SyncCore"]),
     ],
+    dependencies: [
+        .package(path: "../Persistence"),
+    ],
     targets: [
-        .target(name: "SyncCore"),
+        .target(name: "SyncCore", dependencies: ["Persistence"]),
         .testTarget(name: "SyncCoreTests", dependencies: ["SyncCore"]),
     ]
 )

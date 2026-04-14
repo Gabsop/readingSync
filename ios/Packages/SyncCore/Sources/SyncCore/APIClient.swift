@@ -53,6 +53,19 @@ public final class APIClient {
         return entries
     }
 
+    public func syncProgress(_ body: SyncProgressBody) async throws -> Int {
+        let url = baseURL.appending(path: "api/progress")
+        let currentToken = token
+        return try await Self.performPost(url: url, token: currentToken, session: session, body: body)
+    }
+
+    public func fetchBookProgress(bookId: String) async throws -> RemoteProgress {
+        let encoded = bookId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? bookId
+        let url = baseURL.appending(path: "api/progress/\(encoded)")
+        let currentToken = token
+        return try await Self.performRequest(url: url, token: currentToken, session: session)
+    }
+
     private static nonisolated func performRequest<T: Decodable>(
         url: URL,
         token: String?,
@@ -78,6 +91,37 @@ public final class APIClient {
         }
 
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static nonisolated func performPost(
+        url: URL,
+        token: String?,
+        session: URLSession,
+        body: some Encodable & Sendable
+    ) async throws -> Int {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        if let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        request.httpBody = try JSONEncoder().encode(body)
+
+        logger.debug("POST \(url.path())")
+        let (_, response) = try await session.data(for: request)
+
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        guard http.statusCode == 200 || http.statusCode == 409 else {
+            logger.error("HTTP \(http.statusCode) from \(url.path())")
+            throw APIError.httpError(http.statusCode)
+        }
+
+        return http.statusCode
     }
 }
 

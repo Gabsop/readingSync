@@ -14,17 +14,28 @@ final class ReaderViewModel {
     var error: String?
     var showControls = false
     var currentLocator: Locator?
+    var navigateTo: Locator?
+    var conflictState: ConflictState?
+
+    struct ConflictState {
+        let remote: RemoteProgress
+        let localProgress: Double
+        let remoteProgress: Double
+    }
 
     private let entry: ProgressEntry
     private let loader: EpubLoader
     private let token: String?
     private let database: AppDatabase
+    private let syncEngine: SyncEngine?
+    private var userHasNavigated = false
 
-    init(entry: ProgressEntry, token: String?, database: AppDatabase) {
+    init(entry: ProgressEntry, token: String?, database: AppDatabase, syncEngine: SyncEngine?) {
         self.entry = entry
         self.loader = EpubLoader()
         self.token = token
         self.database = database
+        self.syncEngine = syncEngine
     }
 
     var title: String { entry.displayTitle }
@@ -59,12 +70,69 @@ final class ReaderViewModel {
         isLoading = false
     }
 
-    func savePosition(_ locator: Locator) {
-        currentLocator = locator
+    func resolveSync() async {
+        guard let syncEngine else { return }
+
+        let resolution = await syncEngine.resolveProgressOnOpen(bookId: entry.bookId)
+        guard !userHasNavigated else { return }
+
+        switch resolution {
+        case .useLocal:
+            break
+        case .useRemote(let remote):
+            applyRemoteProgress(remote)
+        case .prompt(let remote, let localProg, let remoteProg):
+            conflictState = ConflictState(
+                remote: remote,
+                localProgress: localProg,
+                remoteProgress: remoteProg
+            )
+        }
+    }
+
+    func pickLocal() {
+        userHasNavigated = true
+        conflictState = nil
+    }
+
+    func pickRemote() {
+        guard let conflict = conflictState else { return }
+        userHasNavigated = true
+        conflictState = nil
+        applyRemoteProgress(conflict.remote)
+    }
+
+    private func applyRemoteProgress(_ remote: RemoteProgress) {
+        if let position = remote.position,
+           let locator = LocatorMapper.toLocator(position) {
+            navigateTo = locator
+        }
+
         let record = ReadingPositionRecord(
             bookId: entry.bookId,
-            position: LocatorMapper.toCFIString(locator),
-            progress: locator.locations.totalProgression,
+            position: remote.position,
+            currentPage: remote.currentPage,
+            totalPages: remote.totalPages,
+            progress: remote.progress,
+            updatedAt: remote.updatedAt,
+            source: remote.source,
+            deviceId: remote.deviceId,
+            excerpt: remote.excerpt
+        )
+        try? database.saveReadingPosition(record)
+    }
+
+    func savePosition(_ locator: Locator) {
+        userHasNavigated = true
+        currentLocator = locator
+
+        let cfiString = LocatorMapper.toCFIString(locator)
+        let progress = locator.locations.totalProgression
+
+        let record = ReadingPositionRecord(
+            bookId: entry.bookId,
+            position: cfiString,
+            progress: progress,
             updatedAt: Int(Date().timeIntervalSince1970),
             source: "ios"
         )
@@ -73,10 +141,26 @@ final class ReaderViewModel {
         } catch {
             logger.error("Failed to save position: \(error)")
         }
+
+        if let syncEngine {
+            let payload = SyncPayload(
+                bookId: entry.bookId,
+                position: cfiString,
+                progress: progress
+            )
+            try? syncEngine.enqueueSync(payload)
+        }
     }
 
     func toggleControls() {
         showControls.toggle()
+    }
+
+    func cleanup() {
+        syncEngine?.cancelPendingFlush()
+        Task {
+            await syncEngine?.flush()
+        }
     }
 }
 
@@ -85,6 +169,7 @@ public struct ReaderView: View {
     private let entry: ProgressEntry
     @Environment(APIClient.self) private var apiClient
     @Environment(\.appDatabase) private var database
+    @Environment(SyncEngine.self) private var syncEngine: SyncEngine?
 
     public init(entry: ProgressEntry) {
         self.entry = entry
@@ -104,9 +189,20 @@ public struct ReaderView: View {
         .ignoresSafeArea(.all, edges: .bottom)
         .task {
             guard let database else { return }
-            let vm = ReaderViewModel(entry: entry, token: apiClient.token, database: database)
+            let vm = ReaderViewModel(
+                entry: entry,
+                token: apiClient.token,
+                database: database,
+                syncEngine: syncEngine
+            )
             viewModel = vm
             await vm.load()
+            if vm.publication != nil {
+                await vm.resolveSync()
+            }
+        }
+        .onDisappear {
+            viewModel?.cleanup()
         }
     }
 
@@ -129,12 +225,20 @@ public struct ReaderView: View {
                 EPUBNavigatorView(
                     publication: publication,
                     initialLocation: vm.savedLocator,
+                    navigateTo: Binding(
+                        get: { vm.navigateTo },
+                        set: { vm.navigateTo = $0 }
+                    ),
                     onLocationChanged: { vm.savePosition($0) },
                     onTap: { vm.toggleControls() }
                 )
 
                 if vm.showControls {
                     controlsOverlay(vm)
+                }
+
+                if let conflict = vm.conflictState {
+                    syncConflictOverlay(vm, conflict: conflict)
                 }
             }
             .navigationTitle(vm.title)
@@ -158,6 +262,95 @@ public struct ReaderView: View {
                 Spacer()
             }
             .padding()
+        }
+    }
+
+    @ViewBuilder
+    private func syncConflictOverlay(
+        _ vm: ReaderViewModel,
+        conflict: ReaderViewModel.ConflictState
+    ) -> some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Text("Sync Conflict")
+                    .font(.headline)
+
+                Text("Your reading position differs on another device.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
+                VStack(spacing: 12) {
+                    conflictOption(
+                        icon: "iphone",
+                        label: "This Device",
+                        progress: conflict.localProgress,
+                        action: { vm.pickLocal() }
+                    )
+
+                    conflictOption(
+                        icon: sourceIcon(conflict.remote.source),
+                        label: sourceLabel(conflict.remote.source),
+                        progress: conflict.remoteProgress,
+                        action: { vm.pickRemote() }
+                    )
+                }
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 40)
+        }
+    }
+
+    @ViewBuilder
+    private func conflictOption(
+        icon: String,
+        label: String,
+        progress: Double,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .frame(width: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.subheadline.weight(.medium))
+                    Text("\(Int(progress * 100))% complete")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func sourceIcon(_ source: String?) -> String {
+        switch source {
+        case "kindle": return "book.fill"
+        case "ios": return "iphone"
+        default: return "device.laptop"
+        }
+    }
+
+    private func sourceLabel(_ source: String?) -> String {
+        switch source {
+        case "kindle": return "Kindle"
+        case "ios": return "iPhone"
+        default: return "Other Device"
         }
     }
 }

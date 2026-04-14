@@ -14,10 +14,15 @@ struct ReadingSyncApp: App {
 
     @State private var apiClient = APIClient(baseURL: serverURL)
     private let database: AppDatabase
+    @State private var syncEngine: SyncEngine
 
     init() {
         do {
-            database = try AppDatabase.makeDefault()
+            let db = try AppDatabase.makeDefault()
+            database = db
+            let client = APIClient(baseURL: Self.serverURL)
+            _apiClient = State(initialValue: client)
+            _syncEngine = State(initialValue: SyncEngine(database: db, apiClient: client))
         } catch {
             fatalError("Failed to initialize database: \(error)")
         }
@@ -27,6 +32,7 @@ struct ReadingSyncApp: App {
         WindowGroup {
             AppRoot()
                 .environment(apiClient)
+                .environment(syncEngine)
                 .environment(\.appDatabase, database)
         }
     }

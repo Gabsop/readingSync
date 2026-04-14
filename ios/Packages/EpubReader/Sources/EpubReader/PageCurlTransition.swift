@@ -97,6 +97,18 @@ final class PageCurlController: UIViewController {
         onTap?()
     }
 
+    func go(to locator: Locator) async {
+        _ = await navigator.go(to: locator)
+        try? await Task.sleep(for: .milliseconds(400))
+        let snapshot = captureSnapshot()
+        let page = PageSnapshotVC(snapshot: snapshot, direction: .current)
+        pageVC.setViewControllers([page], direction: .forward, animated: false)
+        if let loc = navigator.currentLocation {
+            onLocationChanged?(loc)
+        }
+        await preloadAdjacentSnapshots()
+    }
+
     // MARK: - Snapshot Capture
 
     private func captureSnapshot() -> UIImage {

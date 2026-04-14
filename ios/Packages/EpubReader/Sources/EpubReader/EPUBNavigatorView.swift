@@ -5,6 +5,7 @@ import SwiftUI
 struct EPUBNavigatorView: UIViewControllerRepresentable {
     let publication: Publication
     let initialLocation: Locator?
+    @Binding var navigateTo: Locator?
     let onLocationChanged: (Locator) -> Void
     let onTap: () -> Void
 
@@ -18,5 +19,14 @@ struct EPUBNavigatorView: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: PageCurlController, context: Context) {}
+    func updateUIViewController(_ controller: PageCurlController, context: Context) {
+        if let target = navigateTo {
+            Task { @MainActor in
+                await controller.go(to: target)
+            }
+            DispatchQueue.main.async {
+                navigateTo = nil
+            }
+        }
+    }
 }

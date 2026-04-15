@@ -77,6 +77,22 @@ public struct SyncPayload: Sendable {
     }
 }
 
+public struct ApiKey: Codable, Identifiable, Hashable, Sendable {
+    public let id: Int
+    public let prefix: String
+    public let name: String?
+    public let lastUsedAt: String?
+    public let createdAt: String?
+}
+
+public struct NewApiKey: Codable, Identifiable, Sendable {
+    public let id: Int
+    public let key: String
+    public let prefix: String
+    public let name: String?
+    public let createdAt: String?
+}
+
 public struct SyncProgressBody: Encodable, Sendable {
     public let bookId: String
     public let position: String?

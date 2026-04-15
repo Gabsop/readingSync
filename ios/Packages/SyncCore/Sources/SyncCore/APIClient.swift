@@ -67,6 +67,35 @@ public final class APIClient {
         return try await Self.performRequest(url: url, token: currentToken, session: session)
     }
 
+    // MARK: - API keys
+
+    public func listApiKeys() async throws -> [ApiKey] {
+        let url = baseURL.appending(path: "api/auth/api-keys")
+        return try await Self.performRequest(url: url, token: token, session: session)
+    }
+
+    public func createApiKey(name: String) async throws -> NewApiKey {
+        struct Body: Encodable, Sendable { let name: String }
+        let url = baseURL.appending(path: "api/auth/api-keys")
+        return try await Self.performJSONPost(
+            url: url,
+            token: token,
+            session: session,
+            body: Body(name: name)
+        )
+    }
+
+    public func revokeApiKey(id: Int) async throws {
+        struct Body: Encodable, Sendable { let id: Int }
+        let url = baseURL.appending(path: "api/auth/api-keys")
+        try await Self.performDelete(
+            url: url,
+            token: token,
+            session: session,
+            body: Body(id: id)
+        )
+    }
+
     private static nonisolated func performRequest<T: Decodable>(
         url: URL,
         token: String?,
@@ -92,6 +121,58 @@ public final class APIClient {
         }
 
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static nonisolated func performJSONPost<T: Decodable>(
+        url: URL,
+        token: String?,
+        session: URLSession,
+        body: some Encodable & Sendable
+    ) async throws -> T {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONEncoder().encode(body)
+
+        logger.debug("POST \(url.path())")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard http.statusCode == 200 else {
+            logger.error("HTTP \(http.statusCode) from \(url.path())")
+            throw APIError.httpError(http.statusCode)
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static nonisolated func performDelete(
+        url: URL,
+        token: String?,
+        session: URLSession,
+        body: some Encodable & Sendable
+    ) async throws {
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONEncoder().encode(body)
+
+        logger.debug("DELETE \(url.path())")
+        let (_, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+        guard http.statusCode == 200 else {
+            logger.error("HTTP \(http.statusCode) from \(url.path())")
+            throw APIError.httpError(http.statusCode)
+        }
     }
 
     private static nonisolated func performPost(

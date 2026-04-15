@@ -116,6 +116,34 @@ final class ReaderViewModel {
         }
     }
 
+    /// Search the publication for a snippet of text and return the first match.
+    /// Used as the fallback when the remote position string isn't parseable.
+    private func locateByExcerpt(publication: Publication, excerpt: String) async -> Locator? {
+        // Trim and shorten — KOReader uses the first 80 chars; do the same so
+        // both clients lock onto the same anchor and to keep the search fast.
+        let trimmed = excerpt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 8 else { return nil }
+        let needle = String(trimmed.prefix(80))
+
+        let result = await publication.search(query: needle)
+        guard case .success(let iterator) = result else { return nil }
+
+        // Take the first hit and stop iterating.
+        let page = await iterator.next()
+        if case .success(let collection?) = page {
+            return collection.locators.first
+        }
+        return nil
+    }
+
+    /// Pull the latest remote progress and jump to it, ignoring local state.
+    func forceSyncFromRemote() async {
+        guard let syncEngine else { return }
+        if let remote = await syncEngine.fetchRemoteProgress(bookId: entry.bookId) {
+            applyRemoteProgress(remote)
+        }
+    }
+
     func pickLocal() {
         userHasNavigated = true
         conflictState = nil
@@ -129,9 +157,22 @@ final class ReaderViewModel {
     }
 
     private func applyRemoteProgress(_ remote: RemoteProgress) {
+        // Layered fallback: exact position → excerpt search → progression.
         if let position = remote.position,
            let locator = LocatorMapper.toLocator(position) {
             navigateTo = locator
+        } else if let publication {
+            Task {
+                if let excerpt = remote.excerpt,
+                   let locator = await locateByExcerpt(publication: publication, excerpt: excerpt) {
+                    navigateTo = locator
+                    return
+                }
+                if remote.progress > 0,
+                   let locator = await publication.locate(progression: remote.progress) {
+                    navigateTo = locator
+                }
+            }
         }
 
         let record = ReadingPositionRecord(
@@ -199,6 +240,7 @@ public struct ReaderView: View {
     @Environment(APIClient.self) private var apiClient
     @Environment(\.appDatabase) private var database
     @Environment(SyncEngine.self) private var syncEngine: SyncEngine?
+    @Environment(\.dismiss) private var dismiss
 
     public init(entry: ProgressEntry) {
         self.entry = entry
@@ -212,10 +254,9 @@ public struct ReaderView: View {
                 ProgressView()
             }
         }
-        .navigationBarBackButtonHidden(viewModel?.publication != nil && !(viewModel?.showControls ?? true))
-        .toolbar(viewModel?.publication != nil && !(viewModel?.showControls ?? true) ? .hidden : .visible, for: .navigationBar)
+        .navigationBarHidden(true)
         .statusBarHidden(viewModel?.publication != nil && !(viewModel?.showControls ?? true))
-        .ignoresSafeArea(.all, edges: .bottom)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             guard let database else { return }
             let vm = ReaderViewModel(
@@ -237,6 +278,7 @@ public struct ReaderView: View {
 
     @ViewBuilder
     private func readerContent(_ vm: ReaderViewModel) -> some View {
+        let _ = logger.debug("readerContent eval — isLoading=\(vm.isLoading) error=\(vm.error ?? "nil") publication=\(vm.publication != nil ? "set" : "nil")")
         if vm.isLoading {
             VStack(spacing: 12) {
                 ProgressView()
@@ -262,17 +304,24 @@ public struct ReaderView: View {
                     onLocationChanged: { vm.savePosition($0) },
                     onTap: { vm.toggleControls() }
                 )
-
-                if vm.showControls {
+                .safeAreaInset(edge: .top, spacing: 0) { topBar(vm) }
+                .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar(vm) }
+                .background(vm.readerPreferences.theme.swiftUIBackground.ignoresSafeArea())
+                .sheet(isPresented: Binding(
+                    get: { vm.showControls },
+                    set: { vm.showControls = $0 }
+                )) {
                     controlsOverlay(vm)
+                        .presentationDetents([.height(280)])
+                        .presentationBackground(.regularMaterial)
+                        .presentationBackgroundInteraction(.enabled)
+                        .presentationDragIndicator(.visible)
                 }
 
                 if let conflict = vm.conflictState {
                     syncConflictOverlay(vm, conflict: conflict)
                 }
             }
-            .navigationTitle(vm.title)
-            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showTOC) {
                 if let publication = vm.publication {
                     TOCSheet(
@@ -305,6 +354,59 @@ public struct ReaderView: View {
     }
 
     @ViewBuilder
+    private func topBar(_ vm: ReaderViewModel) -> some View {
+        HStack(spacing: 12) {
+            Spacer().frame(width: 36)
+            Spacer()
+            Text(vm.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Button {
+                vm.cleanup()
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
+    private func bottomBar(_ vm: ReaderViewModel) -> some View {
+        HStack {
+            Spacer().frame(width: 36)
+            Spacer()
+            Text(pageIndicatorText(vm))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                vm.toggleControls()
+            } label: {
+                Image(systemName: "line.3.horizontal")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private func pageIndicatorText(_ vm: ReaderViewModel) -> String {
+        "\(vm.progressPercent)%"
+    }
+
+    @ViewBuilder
     private func controlsOverlay(_ vm: ReaderViewModel) -> some View {
         ControlsOverlay(
             progressPercent: vm.progressPercent,
@@ -313,6 +415,10 @@ public struct ReaderView: View {
             onOpenContents: { showTOC = true },
             onOpenSearch: { showSearch = true },
             onOpenSettings: { showSettings = true },
+            onSyncFromKindle: {
+                vm.showControls = false
+                Task { await vm.forceSyncFromRemote() }
+            },
             onScrub: { vm.navigateToProgression($0) }
         )
     }

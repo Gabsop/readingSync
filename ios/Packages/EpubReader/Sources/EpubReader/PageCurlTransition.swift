@@ -68,12 +68,21 @@ final class PageCurlController: UIViewController {
         pageVC.dataSource = self
         pageVC.delegate = self
 
+        // Hide the page-curl overlay until we've captured a non-blank snapshot.
+        // The live navigator stays visible underneath so the reader isn't blank
+        // while WebKit finishes its initial render.
+        pageVC.view.isHidden = true
+
         let placeholder = PageSnapshotVC(direction: .current)
         placeholder.view.backgroundColor = view.backgroundColor
         pageVC.setViewControllers([placeholder], direction: .forward, animated: false)
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         pageVC.view.addGestureRecognizer(tap)
+
+        // Tap-to-toggle-controls also needs to work while the overlay is hidden.
+        let navTap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        navigator.view.addGestureRecognizer(navTap)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -82,11 +91,13 @@ final class PageCurlController: UIViewController {
         didInitialSetup = true
 
         Task {
-            try? await Task.sleep(for: .milliseconds(500))
+            // WebKit needs time to render the first chapter before snapshotting.
+            try? await Task.sleep(for: .milliseconds(800))
 
             let snapshot = captureSnapshot()
             let page = PageSnapshotVC(snapshot: snapshot, direction: .current)
             pageVC.setViewControllers([page], direction: .forward, animated: false)
+            pageVC.view.isHidden = false
 
             if let locator = navigator.currentLocation {
                 onLocationChanged?(locator)

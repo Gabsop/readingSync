@@ -32,6 +32,7 @@ final class LibraryViewModel {
 public struct LibraryView: View {
     @Environment(APIClient.self) private var apiClient
     @State private var viewModel: LibraryViewModel?
+    @State private var showSettings = false
 
     public init() {}
 
@@ -46,10 +47,15 @@ public struct LibraryView: View {
         .navigationTitle("Library")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Sign Out", role: .destructive) {
-                    apiClient.logout()
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
                 }
             }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
         .task {
             let vm = LibraryViewModel(apiClient: apiClient)

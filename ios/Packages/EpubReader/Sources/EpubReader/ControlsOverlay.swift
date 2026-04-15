@@ -7,28 +7,25 @@ struct ControlsOverlay: View {
     var onOpenContents: () -> Void = {}
     var onOpenSearch: () -> Void = {}
     var onOpenSettings: () -> Void = {}
+    var onSyncFromKindle: () -> Void = {}
     var onScrub: (Double) -> Void = { _ in }
 
     var body: some View {
-        VStack {
-            Spacer()
+        VStack(spacing: 12) {
+            toolbar
 
-            VStack(spacing: 8) {
-                toolbar
+            Scrubber(
+                progress: totalProgression,
+                chapterTitle: chapterTitle,
+                onScrub: onScrub
+            )
+            .padding(.horizontal, 4)
 
-                Scrubber(
-                    progress: totalProgression,
-                    chapterTitle: chapterTitle,
-                    onScrub: onScrub
-                )
-                .padding(.horizontal, 4)
-
-                actionRow
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 4)
+            actionRow
         }
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .padding(.horizontal, 12)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
     }
 
     private var toolbar: some View {
@@ -112,7 +109,7 @@ struct ControlsOverlay: View {
     private var actionButtons: [(icon: String, action: () -> Void)] {
         [
             ("square.and.arrow.up", {}),
-            ("iphone", {}),
+            ("arrow.triangle.2.circlepath", onSyncFromKindle),
             ("lock", {}),
             ("bookmark", {}),
         ]
